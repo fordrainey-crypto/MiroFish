@@ -8,14 +8,14 @@
       
       <div class="header-center">
         <div class="view-switcher">
-          <button 
-            v-for="mode in ['graph', 'split', 'workbench']" 
+          <button
+            v-for="mode in ['graph', 'split', 'workbench']"
             :key="mode"
             class="switch-btn"
             :class="{ active: viewMode === mode }"
             @click="viewMode = mode"
           >
-            {{ { graph: '图谱', split: '双栏', workbench: '工作台' }[mode] }}
+            {{ { graph: 'Graph', split: 'Split', workbench: 'Workbench' }[mode] }}
           </button>
         </div>
       </div>
@@ -23,7 +23,7 @@
       <div class="header-right">
         <div class="workflow-step">
           <span class="step-num">Step 3/5</span>
-          <span class="step-name">开始模拟</span>
+          <span class="step-name">Simulation</span>
         </div>
         <div class="step-divider"></div>
         <span class="status-indicator" :class="statusClass">

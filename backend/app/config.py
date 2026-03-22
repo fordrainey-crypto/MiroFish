@@ -62,14 +62,24 @@ class Config:
     REPORT_AGENT_MAX_TOOL_CALLS = int(os.environ.get('REPORT_AGENT_MAX_TOOL_CALLS', '5'))
     REPORT_AGENT_MAX_REFLECTION_ROUNDS = int(os.environ.get('REPORT_AGENT_MAX_REFLECTION_ROUNDS', '2'))
     REPORT_AGENT_TEMPERATURE = float(os.environ.get('REPORT_AGENT_TEMPERATURE', '0.5'))
-    
+
+    # Public demo mode: require users to provide their own API keys.
+    # When True, server .env keys are NOT used as fallback — prevents budget drain
+    # from anonymous visitors. Set to True in production .env for public deployment.
+    REQUIRE_USER_KEYS = os.environ.get('REQUIRE_USER_KEYS', 'false').lower() == 'true'
+
+    # URL of the live demo, embedded in exported report HTML as a CTA link.
+    DEMO_URL = os.environ.get('DEMO_URL', 'http://localhost:3000')
+
     @classmethod
     def validate(cls):
         """验证必要配置"""
         errors = []
-        if not cls.LLM_API_KEY:
-            errors.append("LLM_API_KEY 未配置")
-        if not cls.ZEP_API_KEY:
-            errors.append("ZEP_API_KEY 未配置")
+        if not cls.REQUIRE_USER_KEYS:
+            # In server-key mode, both keys must be set
+            if not cls.LLM_API_KEY:
+                errors.append("LLM_API_KEY 未配置")
+            if not cls.ZEP_API_KEY:
+                errors.append("ZEP_API_KEY 未配置")
         return errors
 

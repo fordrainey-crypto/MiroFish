@@ -48,7 +48,13 @@ class Project:
     simulation_requirement: Optional[str] = None
     chunk_size: int = 500
     chunk_overlap: int = 50
-    
+
+    # User-provided API keys (BYOK). Stored per-project so each simulation
+    # uses the keys the user entered when creating it. Never logged.
+    user_llm_api_key: Optional[str] = None
+    user_zep_api_key: Optional[str] = None
+    user_llm_model_name: Optional[str] = None  # e.g. "qwen/qwen-plus"
+
     # 错误信息
     error: Optional[str] = None
     
@@ -69,6 +75,11 @@ class Project:
             "simulation_requirement": self.simulation_requirement,
             "chunk_size": self.chunk_size,
             "chunk_overlap": self.chunk_overlap,
+            # Store actual key values on disk (project.json is local/server-side only).
+            # API responses that expose project data should mask these — see graph.py list endpoint.
+            "user_llm_api_key": self.user_llm_api_key,
+            "user_zep_api_key": self.user_zep_api_key,
+            "user_llm_model_name": self.user_llm_model_name,
             "error": self.error
         }
     
@@ -94,6 +105,9 @@ class Project:
             simulation_requirement=data.get('simulation_requirement'),
             chunk_size=data.get('chunk_size', 500),
             chunk_overlap=data.get('chunk_overlap', 50),
+            user_llm_api_key=data.get('user_llm_api_key'),
+            user_zep_api_key=data.get('user_zep_api_key'),
+            user_llm_model_name=data.get('user_llm_model_name'),
             error=data.get('error')
         )
 

@@ -15,7 +15,7 @@
             :class="{ active: viewMode === mode }"
             @click="viewMode = mode"
           >
-            {{ { graph: '图谱', split: '双栏', workbench: '工作台' }[mode] }}
+            {{ { graph: 'Graph', split: 'Split', workbench: 'Workbench' }[mode] }}
           </button>
         </div>
       </div>
@@ -23,7 +23,7 @@
       <div class="header-right">
         <div class="workflow-step">
           <span class="step-num">Step 4/5</span>
-          <span class="step-name">报告生成</span>
+          <span class="step-name">Report</span>
         </div>
         <div class="step-divider"></div>
         <span class="status-indicator" :class="statusClass">
@@ -32,6 +32,20 @@
         </span>
       </div>
     </header>
+
+    <!-- Report Ready Banner -->
+    <div v-if="currentStatus === 'completed'" class="report-ready-banner">
+      <span class="banner-icon">✓</span>
+      <span class="banner-text">Your report is ready!</span>
+      <div class="banner-actions">
+        <button class="banner-btn secondary" @click="exportHtml">
+          Export HTML
+        </button>
+        <button class="banner-btn" @click="goToInteraction">
+          Chat with Agents →
+        </button>
+      </div>
+    </div>
 
     <!-- Main Content Area -->
     <main class="content-area">
@@ -125,6 +139,14 @@ const addLog = (msg) => {
 
 const updateStatus = (status) => {
   currentStatus.value = status
+}
+
+const goToInteraction = () => {
+  router.push({ name: 'Interaction', params: { reportId: currentReportId.value } })
+}
+
+const exportHtml = () => {
+  window.location.href = `/api/report/${currentReportId.value}/export-html`
 }
 
 // --- Layout Methods ---
@@ -344,5 +366,61 @@ onMounted(() => {
 
 .panel-wrapper.left {
   border-right: 1px solid #EAEAEA;
+}
+
+/* Report Ready Banner */
+.report-ready-banner {
+  background: #F0FAF5;
+  border-bottom: 1px solid #1A936F;
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  z-index: 50;
+}
+
+.banner-icon {
+  color: #1A936F;
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.banner-text {
+  font-weight: 700;
+  color: #065F46;
+  font-size: 14px;
+  flex: 1;
+}
+
+.banner-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.banner-btn {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  background: #1A936F;
+  color: #FFF;
+  transition: background 0.2s;
+}
+
+.banner-btn:hover {
+  background: #148559;
+}
+
+.banner-btn.secondary {
+  background: #FFF;
+  color: #1A936F;
+  border: 1px solid #1A936F;
+}
+
+.banner-btn.secondary:hover {
+  background: #E8F7F2;
 }
 </style>

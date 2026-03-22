@@ -91,13 +91,18 @@
       </div>
 
       <div class="action-controls">
-        <button 
+        <div v-if="autoTriggering" class="auto-trigger-banner">
+          <span class="loading-spinner-small"></span>
+          Simulation complete — generating your report...
+        </div>
+        <button
+          v-else
           class="action-btn primary"
           :disabled="phase !== 2 || isGeneratingReport"
           @click="handleNextStep"
         >
           <span v-if="isGeneratingReport" class="loading-spinner-small"></span>
-          {{ isGeneratingReport ? '启动中...' : '开始生成结果报告' }} 
+          {{ isGeneratingReport ? 'Starting...' : 'Generate Report' }}
           <span v-if="!isGeneratingReport" class="arrow-icon">→</span>
         </button>
       </div>
@@ -314,7 +319,8 @@ const router = useRouter()
 
 // State
 const isGeneratingReport = ref(false)
-const phase = ref(0) // 0: 未开始, 1: 运行中, 2: 已完成
+const autoTriggering = ref(false)
+const phase = ref(0) // 0: not started, 1: running, 2: completed
 const isStarting = ref(false)
 const isStopping = ref(false)
 const startError = ref(null)
@@ -673,6 +679,17 @@ const handleNextStep = async () => {
     isGeneratingReport.value = false
   }
 }
+
+// Auto-trigger report generation when simulation completes
+watch(phase, (newPhase) => {
+  if (newPhase === 2 && !isGeneratingReport.value) {
+    autoTriggering.value = true
+    addLog('✓ Simulation complete — report generation starting in 2s...')
+    setTimeout(() => {
+      handleNextStep()
+    }, 2000)
+  }
+})
 
 // Scroll log to bottom
 const logContent = ref(null)
@@ -1249,6 +1266,20 @@ onUnmounted(() => {
 .log-time { color: #555; min-width: 75px; }
 .log-msg { color: #BBB; word-break: break-all; }
 .mono { font-family: 'JetBrains Mono', monospace; }
+
+/* Auto-trigger banner */
+.auto-trigger-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  background: #F0FAF5;
+  border: 1px solid #1A936F;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1A936F;
+}
 
 /* Loading spinner for button */
 .loading-spinner-small {

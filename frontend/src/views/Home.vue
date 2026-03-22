@@ -1,11 +1,43 @@
 <template>
   <div class="home-container">
+    <!-- API Keys Setup Overlay — shown when keys are missing from localStorage -->
+    <div v-if="showKeysOverlay" class="keys-overlay">
+      <div class="keys-modal">
+        <div class="keys-modal-header">
+          <span class="keys-modal-logo">MIROFISH</span>
+          <h2>Get Started</h2>
+          <p>Enter your API keys to run simulations. Keys are stored in your browser only — never sent to our servers unencrypted.</p>
+        </div>
+        <div class="keys-form">
+          <div class="keys-field">
+            <label>OpenRouter API Key <span class="required">*</span></label>
+            <input v-model="keysForm.llmKey" type="password" placeholder="sk-or-..." autocomplete="off" />
+            <a href="https://openrouter.ai/keys" target="_blank" class="keys-link">Get a free OpenRouter key ↗</a>
+          </div>
+          <div class="keys-field">
+            <label>Zep Cloud API Key <span class="required">*</span></label>
+            <input v-model="keysForm.zepKey" type="password" placeholder="z_..." autocomplete="off" />
+            <a href="https://cloud.getzep.com" target="_blank" class="keys-link">Get a free Zep Cloud key ↗</a>
+          </div>
+          <div class="keys-field">
+            <label>Model <span class="keys-optional">(optional)</span></label>
+            <input v-model="keysForm.model" type="text" placeholder="qwen/qwen-plus" autocomplete="off" />
+            <span class="keys-hint">Any OpenRouter-compatible model. Default: qwen/qwen-plus</span>
+          </div>
+          <div class="keys-error" v-if="keysError">{{ keysError }}</div>
+          <button class="keys-continue-btn" @click="saveKeys">Continue →</button>
+          <button class="keys-skip-btn" @click="skipKeys">Skip (use server keys if configured)</button>
+        </div>
+      </div>
+    </div>
+
     <!-- 顶部导航栏 -->
     <nav class="navbar">
       <div class="nav-brand">MIROFISH</div>
       <div class="nav-links">
+        <button class="nav-keys-btn" @click="showKeysOverlay = true" title="API Keys">⚙ Keys</button>
         <a href="https://github.com/666ghj/MiroFish" target="_blank" class="github-link">
-          访问我们的Github主页 <span class="arrow">↗</span>
+          GitHub <span class="arrow">↗</span>
         </a>
       </div>
     </nav>
@@ -14,22 +46,22 @@
       <!-- 上半部分：Hero 区域 -->
       <section class="hero-section">
         <div class="hero-left">
-          <div class="tag-row">
-            <span class="orange-tag">简洁通用的群体智能引擎</span>
-            <span class="version-text">/ v0.1-预览版</span>
+          <div class=”tag-row”>
+            <span class=”orange-tag”>AI Social Simulation Engine</span>
+            <span class=”version-text”>/ v0.1-preview</span>
           </div>
-          
-          <h1 class="main-title">
-            上传任意报告<br>
-            <span class="gradient-text">即刻推演未来</span>
+
+          <h1 class=”main-title”>
+            Upload any document.<br>
+            <span class=”gradient-text”>Simulate the future.</span>
           </h1>
-          
-          <div class="hero-desc">
+
+          <div class=”hero-desc”>
             <p>
-              即使只有一段文字，<span class="highlight-bold">MiroFish</span> 也能基于其中的现实种子，全自动生成与之对应的至多<span class="highlight-orange">百万级Agent</span>构成的平行世界。通过上帝视角注入变量，在复杂的群体交互中寻找动态环境下的<span class="highlight-code">“局部最优解”</span>
+              Give <span class=”highlight-bold”>MiroFish</span> a news article, report, or any text — it automatically builds a knowledge graph, spawns up to <span class=”highlight-orange”>millions of AI agents</span>, and runs a social simulation to produce a <span class=”highlight-code”>prediction report</span>.
             </p>
-            <p class="slogan-text">
-              让未来在 Agent 群中预演，让决策在百战后胜出<span class="blinking-cursor">_</span>
+            <p class=”slogan-text”>
+              Let the future play out in an agent swarm. Win decisions before they happen.<span class=”blinking-cursor”>_</span>
             </p>
           </div>
            
@@ -53,65 +85,65 @@
         <!-- 左栏：状态与步骤 -->
         <div class="left-panel">
           <div class="panel-header">
-            <span class="status-dot">■</span> 系统状态
+            <span class="status-dot">■</span> System Status
           </div>
-          
-          <h2 class="section-title">准备就绪</h2>
+
+          <h2 class="section-title">Ready</h2>
           <p class="section-desc">
-            预测引擎待命中，可上传多份非结构化数据以初始化模拟序列
+            Prediction engine standing by. Upload one or more documents to initialize a simulation.
           </p>
-          
+
           <!-- 数据指标卡片 -->
           <div class="metrics-row">
             <div class="metric-card">
-              <div class="metric-value">低成本</div>
-              <div class="metric-label">常规模拟平均5$/次</div>
+              <div class="metric-value">~$5/run</div>
+              <div class="metric-label">avg cost with qwen-plus</div>
             </div>
             <div class="metric-card">
-              <div class="metric-value">高可用</div>
-              <div class="metric-label">最多百万级Agent模拟</div>
+              <div class="metric-value">Millions</div>
+              <div class="metric-label">max agents supported</div>
             </div>
           </div>
 
           <!-- 项目模拟步骤介绍 (新增区域) -->
           <div class="steps-container">
             <div class="steps-header">
-               <span class="diamond-icon">◇</span> 工作流序列
+               <span class="diamond-icon">◇</span> Pipeline
             </div>
             <div class="workflow-list">
               <div class="workflow-item">
                 <span class="step-num">01</span>
                 <div class="step-info">
-                  <div class="step-title">图谱构建</div>
-                  <div class="step-desc">现实种子提取 & 个体与群体记忆注入 & GraphRAG构建</div>
+                  <div class="step-title">Knowledge Graph</div>
+                  <div class="step-desc">Extract entities & relationships → build GraphRAG knowledge base</div>
                 </div>
               </div>
               <div class="workflow-item">
                 <span class="step-num">02</span>
                 <div class="step-info">
-                  <div class="step-title">环境搭建</div>
-                  <div class="step-desc">实体关系抽取 & 人设生成 & 环境配置Agent注入仿真参数</div>
+                  <div class="step-title">Agent Setup</div>
+                  <div class="step-desc">Generate agent personas with Zep memory & simulation config</div>
                 </div>
               </div>
               <div class="workflow-item">
                 <span class="step-num">03</span>
                 <div class="step-info">
-                  <div class="step-title">开始模拟</div>
-                  <div class="step-desc">双平台并行模拟 & 自动解析预测需求 & 动态更新时序记忆</div>
+                  <div class="step-title">Simulation</div>
+                  <div class="step-desc">Dual-platform (Twitter + Reddit) multi-round social simulation</div>
                 </div>
               </div>
               <div class="workflow-item">
                 <span class="step-num">04</span>
                 <div class="step-info">
-                  <div class="step-title">报告生成</div>
-                  <div class="step-desc">ReportAgent拥有丰富的工具集与模拟后环境进行深度交互</div>
+                  <div class="step-title">Report</div>
+                  <div class="step-desc">ReportAgent synthesizes findings into a prediction report</div>
                 </div>
               </div>
               <div class="workflow-item">
                 <span class="step-num">05</span>
                 <div class="step-info">
-                  <div class="step-title">深度互动</div>
-                  <div class="step-desc">与模拟世界中的任意一位进行对话 & 与ReportAgent进行对话</div>
+                  <div class="step-title">Chat</div>
+                  <div class="step-desc">Chat with any agent or the ReportAgent directly</div>
                 </div>
               </div>
             </div>
@@ -124,8 +156,8 @@
             <!-- 上传区域 -->
             <div class="console-section">
               <div class="console-header">
-                <span class="console-label">01 / 现实种子</span>
-                <span class="console-meta">支持格式: PDF, MD, TXT</span>
+                <span class="console-label">01 / Reality Seed</span>
+                <span class="console-meta">Formats: PDF, MD, TXT</span>
               </div>
               
               <div 
@@ -148,8 +180,8 @@
                 
                 <div v-if="files.length === 0" class="upload-placeholder">
                   <div class="upload-icon">↑</div>
-                  <div class="upload-title">拖拽文件上传</div>
-                  <div class="upload-hint">或点击浏览文件系统</div>
+                  <div class="upload-title">Drag & drop your file</div>
+                  <div class="upload-hint">or click to browse</div>
                 </div>
                 
                 <div v-else class="file-list">
@@ -164,35 +196,35 @@
 
             <!-- 分割线 -->
             <div class="console-divider">
-              <span>输入参数</span>
+              <span>Parameters</span>
             </div>
 
             <!-- 输入区域 -->
             <div class="console-section">
               <div class="console-header">
-                <span class="console-label">>_ 02 / 模拟提示词</span>
+                <span class="console-label">>_ 02 / Prediction Goal</span>
               </div>
               <div class="input-wrapper">
                 <textarea
                   v-model="formData.simulationRequirement"
                   class="code-input"
-                  placeholder="// 用自然语言输入模拟或预测需求（例.武大若发布撤销肖某处分的公告，会引发什么舆情走向）"
+                  placeholder="// Describe what you want to predict in plain English. E.g. 'How will the public react to this policy change over the next 90 days?'"
                   rows="6"
                   :disabled="loading"
                 ></textarea>
-                <div class="model-badge">引擎: MiroFish-V1.0</div>
+                <div class="model-badge">Engine: MiroFish-V1.0</div>
               </div>
             </div>
 
             <!-- 启动按钮 -->
             <div class="console-section btn-section">
-              <button 
+              <button
                 class="start-engine-btn"
                 @click="startSimulation"
                 :disabled="!canSubmit || loading"
               >
-                <span v-if="!loading">启动引擎</span>
-                <span v-else>初始化中...</span>
+                <span v-if="!loading">Run Simulation</span>
+                <span v-else>Initializing...</span>
                 <span class="btn-arrow">→</span>
               </button>
             </div>
@@ -207,11 +239,52 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import HistoryDatabase from '../components/HistoryDatabase.vue'
 
 const router = useRouter()
+
+// ── API Keys overlay ──────────────────────────────────────────────────────────
+const LS_LLM_KEY = 'mf_llm_key'
+const LS_ZEP_KEY = 'mf_zep_key'
+const LS_MODEL   = 'mf_model'
+
+const showKeysOverlay = ref(false)
+const keysError = ref('')
+const keysForm = ref({
+  llmKey: localStorage.getItem(LS_LLM_KEY) || '',
+  zepKey: localStorage.getItem(LS_ZEP_KEY) || '',
+  model:  localStorage.getItem(LS_MODEL)   || '',
+})
+
+onMounted(() => {
+  // Show overlay if either required key is missing
+  if (!localStorage.getItem(LS_LLM_KEY) || !localStorage.getItem(LS_ZEP_KEY)) {
+    showKeysOverlay.value = true
+  }
+})
+
+const saveKeys = () => {
+  keysError.value = ''
+  if (!keysForm.value.llmKey.trim() || !keysForm.value.zepKey.trim()) {
+    keysError.value = 'Both API keys are required.'
+    return
+  }
+  localStorage.setItem(LS_LLM_KEY, keysForm.value.llmKey.trim())
+  localStorage.setItem(LS_ZEP_KEY, keysForm.value.zepKey.trim())
+  if (keysForm.value.model.trim()) {
+    localStorage.setItem(LS_MODEL, keysForm.value.model.trim())
+  } else {
+    localStorage.removeItem(LS_MODEL)
+  }
+  showKeysOverlay.value = false
+}
+
+const skipKeys = () => {
+  showKeysOverlay.value = false
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 // 表单数据
 const formData = ref({
@@ -291,11 +364,21 @@ const scrollToBottom = () => {
 // 开始模拟 - 立即跳转，API调用在Process页面进行
 const startSimulation = () => {
   if (!canSubmit.value || loading.value) return
-  
-  // 存储待上传的数据
+
+  // If keys overlay is needed (keys missing), show it first
+  if (!localStorage.getItem(LS_LLM_KEY) || !localStorage.getItem(LS_ZEP_KEY)) {
+    showKeysOverlay.value = true
+    return
+  }
+
+  // 存储待上传的数据（including user keys）
   import('../store/pendingUpload.js').then(({ setPendingUpload }) => {
-    setPendingUpload(files.value, formData.value.simulationRequirement)
-    
+    setPendingUpload(files.value, formData.value.simulationRequirement, {
+      userLlmApiKey:   localStorage.getItem(LS_LLM_KEY) || '',
+      userZepApiKey:   localStorage.getItem(LS_ZEP_KEY) || '',
+      userLlmModelName: localStorage.getItem(LS_MODEL) || '',
+    })
+
     // 立即跳转到Process页面（使用特殊标识表示新建项目）
     router.push({
       name: 'Process',
@@ -886,5 +969,160 @@ const startSimulation = () => {
     max-width: 200px;
     margin-bottom: 20px;
   }
+}
+
+/* ── API Keys Overlay ──────────────────────────────────────────────────────── */
+.keys-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.keys-modal {
+  background: #111118;
+  border: 1px solid #2a2a3a;
+  border-radius: 12px;
+  padding: 40px;
+  max-width: 480px;
+  width: 90%;
+}
+
+.keys-modal-header {
+  margin-bottom: 28px;
+}
+
+.keys-modal-logo {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 3px;
+  color: #FF4500;
+  display: block;
+  margin-bottom: 12px;
+}
+
+.keys-modal-header h2 {
+  font-size: 22px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 8px;
+}
+
+.keys-modal-header p {
+  font-size: 13px;
+  color: #888;
+  line-height: 1.5;
+}
+
+.keys-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.keys-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.keys-field label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ccc;
+}
+
+.required {
+  color: #FF4500;
+}
+
+.keys-optional {
+  font-weight: 400;
+  color: #666;
+}
+
+.keys-field input {
+  background: #1a1a24;
+  border: 1px solid #2a2a3a;
+  border-radius: 6px;
+  padding: 10px 14px;
+  color: #fff;
+  font-size: 14px;
+  font-family: 'JetBrains Mono', monospace;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.keys-field input:focus {
+  border-color: #FF4500;
+}
+
+.keys-link {
+  font-size: 12px;
+  color: #FF4500;
+  text-decoration: none;
+}
+
+.keys-hint {
+  font-size: 12px;
+  color: #555;
+}
+
+.keys-error {
+  color: #f85149;
+  font-size: 13px;
+  background: #2d1b1b;
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.keys-continue-btn {
+  background: #FF4500;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 12px 20px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.keys-continue-btn:hover {
+  background: #e03d00;
+}
+
+.keys-skip-btn {
+  background: none;
+  border: none;
+  color: #555;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: center;
+}
+
+.keys-skip-btn:hover {
+  color: #888;
+}
+
+/* Nav keys button */
+.nav-keys-btn {
+  background: none;
+  border: 1px solid #333;
+  color: #888;
+  font-size: 13px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-right: 12px;
+}
+
+.nav-keys-btn:hover {
+  color: #fff;
+  border-color: #666;
 }
 </style>

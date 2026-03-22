@@ -153,6 +153,11 @@ def generate_ontology():
         simulation_requirement = request.form.get('simulation_requirement', '')
         project_name = request.form.get('project_name', 'Unnamed Project')
         additional_context = request.form.get('additional_context', '')
+
+        # User-provided API keys (BYOK). Optional — fall back to server keys if not provided.
+        user_llm_api_key = request.form.get('user_llm_api_key') or None
+        user_zep_api_key = request.form.get('user_zep_api_key') or None
+        user_llm_model_name = request.form.get('user_llm_model_name') or None
         
         logger.debug(f"项目名称: {project_name}")
         logger.debug(f"模拟需求: {simulation_requirement[:100]}...")
@@ -174,6 +179,9 @@ def generate_ontology():
         # 创建项目
         project = ProjectManager.create_project(name=project_name)
         project.simulation_requirement = simulation_requirement
+        project.user_llm_api_key = user_llm_api_key
+        project.user_zep_api_key = user_zep_api_key
+        project.user_llm_model_name = user_llm_model_name
         logger.info(f"创建项目: {project.project_id}")
         
         # 保存文件并提取文本
@@ -213,7 +221,17 @@ def generate_ontology():
         
         # 生成本体
         logger.info("调用 LLM 生成本体定义...")
-        generator = OntologyGenerator()
+        from ..utils.llm_client import LLMClient
+        llm_key = user_llm_api_key or (None if Config.REQUIRE_USER_KEYS else Config.LLM_API_KEY)
+        if not llm_key:
+            ProjectManager.delete_project(project.project_id)
+            return jsonify({"success": False, "error": "user_keys_required",
+                            "message": "Please provide your API keys in the setup screen."}), 400
+        llm_client = LLMClient(
+            api_key=llm_key,
+            model=user_llm_model_name or Config.LLM_MODEL_NAME
+        )
+        generator = OntologyGenerator(llm_client=llm_client)
         ontology = generator.generate(
             document_texts=document_texts,
             simulation_requirement=simulation_requirement,
@@ -281,17 +299,6 @@ def build_graph():
     """
     try:
         logger.info("=== 开始构建图谱 ===")
-        
-        # 检查配置
-        errors = []
-        if not Config.ZEP_API_KEY:
-            errors.append("ZEP_API_KEY未配置")
-        if errors:
-            logger.error(f"配置错误: {errors}")
-            return jsonify({
-                "success": False,
-                "error": "配置错误: " + "; ".join(errors)
-            }), 500
         
         # 解析请求
         data = request.get_json() or {}
@@ -381,8 +388,11 @@ def build_graph():
                     message="初始化图谱构建服务..."
                 )
                 
-                # 创建图谱构建服务
-                builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+                # 创建图谱构建服务 — use user key if provided, else server key (unless REQUIRE_USER_KEYS)
+                zep_key = project.user_zep_api_key or (None if Config.REQUIRE_USER_KEYS else Config.ZEP_API_KEY)
+                if not zep_key:
+                    raise ValueError("No Zep API key configured. Please provide your key in the setup screen.")
+                builder = GraphBuilderService(api_key=zep_key)
                 
                 # 分块
                 task_manager.update_task(

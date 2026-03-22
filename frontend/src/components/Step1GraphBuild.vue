@@ -92,13 +92,20 @@
           <div v-if="projectData?.ontology?.edge_types" class="tags-container" :class="{ 'dimmed': selectedOntologyItem }">
             <span class="tag-label">GENERATED RELATION TYPES</span>
             <div class="tags-list">
-              <span 
-                v-for="rel in projectData.ontology.edge_types" 
-                :key="rel.name" 
+              <span
+                v-for="rel in showAllRelations ? projectData.ontology.edge_types : projectData.ontology.edge_types.slice(0, 10)"
+                :key="rel.name"
                 class="entity-tag clickable"
                 @click="selectOntologyItem(rel, 'relation')"
               >
                 {{ rel.name }}
+              </span>
+              <span
+                v-if="projectData.ontology.edge_types.length > 10"
+                class="entity-tag relation-toggle"
+                @click="showAllRelations = !showAllRelations"
+              >
+                {{ showAllRelations ? '▲ show less' : `+${projectData.ontology.edge_types.length - 10} more` }}
               </span>
             </div>
           </div>
@@ -207,6 +214,7 @@ defineEmits(['next-step'])
 const selectedOntologyItem = ref(null)
 const logContent = ref(null)
 const creatingSimulation = ref(false)
+const showAllRelations = ref(false)
 
 // 进入环境搭建 - 创建 simulation 并跳转
 const handleEnterEnvSetup = async () => {
@@ -405,6 +413,18 @@ watch(() => props.systemLogs.length, () => {
 .entity-tag.clickable:hover {
     background: #E0E0E0;
     border-color: #CCC;
+}
+
+.entity-tag.relation-toggle {
+    cursor: pointer;
+    background: #EFEFEF;
+    border-style: dashed;
+    color: #666;
+    font-style: italic;
+}
+
+.entity-tag.relation-toggle:hover {
+    background: #E0E0E0;
 }
 
 /* Ontology Detail Overlay */
