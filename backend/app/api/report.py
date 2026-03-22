@@ -1200,3 +1200,79 @@ def get_graph_statistics_tool():
             "error": str(e),
             "traceback": traceback.format_exc()
         }), 500
+
+
+@report_bp.route('/<report_id>/simplify', methods=['POST'])
+def simplify_report(report_id: str):
+    """
+    Generate a plain-English summary of a completed report using the user's LLM key.
+
+    Request (JSON): {}  — no body required; user keys are pulled from the project.
+
+    Returns:
+        { "success": true, "data": { "simplified": "<markdown text>" } }
+    """
+    try:
+        report = ReportManager.get_report(report_id)
+        if not report:
+            return jsonify({"success": False, "error": f"Report not found: {report_id}"}), 404
+
+        # Get report text — prefer the markdown file, fall back to in-memory content
+        md_path = ReportManager._get_report_markdown_path(report_id)
+        if os.path.exists(md_path):
+            with open(md_path, encoding='utf-8') as f:
+                report_text = f.read()
+        elif report.markdown_content:
+            report_text = report.markdown_content
+        else:
+            return jsonify({"success": False, "error": "Report text not available yet."}), 400
+
+        if not report_text.strip():
+            return jsonify({"success": False, "error": "Report is empty."}), 400
+
+        # Resolve user keys via the project attached to this report's simulation
+        sim_state = SimulationManager.get_simulation(report.simulation_id) if report.simulation_id else None
+        project = ProjectManager.get_project(sim_state.project_id) if sim_state else None
+
+        _llm_key = None
+        _llm_base_url = None
+        _llm_model = Config.LLM_MODEL_NAME
+
+        if project:
+            _llm_key = project.user_llm_api_key or (None if Config.REQUIRE_USER_KEYS else Config.LLM_API_KEY)
+            _llm_base_url = project.user_llm_base_url or (None if Config.REQUIRE_USER_KEYS else Config.LLM_BASE_URL)
+            _llm_model = project.user_llm_model_name or Config.LLM_MODEL_NAME
+        elif not Config.REQUIRE_USER_KEYS:
+            _llm_key = Config.LLM_API_KEY
+            _llm_base_url = Config.LLM_BASE_URL
+
+        if not _llm_key:
+            return jsonify({"success": False, "error": "user_keys_required",
+                            "message": "API key not available. Please re-enter your keys."}), 400
+
+        from ..utils.llm_client import LLMClient
+        llm = LLMClient(api_key=_llm_key, base_url=_llm_base_url, model=_llm_model)
+
+        system_prompt = (
+            "Rewrite the following simulation report in plain English for a general audience. "
+            "Keep all the key findings and predictions but eliminate jargon, shorten sentences, "
+            "and lead with the most important conclusion. "
+            "The rewritten version should be roughly half the length of the original. "
+            "Do not add any information that is not in the original report. "
+            "Format the output as clean markdown."
+        )
+
+        simplified = llm.chat(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": report_text}
+            ],
+            temperature=0.3,
+            max_tokens=4096
+        )
+
+        return jsonify({"success": True, "data": {"simplified": simplified}})
+
+    except Exception as e:
+        logger.error(f"simplify_report failed: {str(e)}")
+        return jsonify({"success": False, "error": str(e), "traceback": traceback.format_exc()}), 500

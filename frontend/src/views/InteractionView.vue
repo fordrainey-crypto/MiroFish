@@ -23,7 +23,7 @@
       <div class="header-right">
         <div class="workflow-step">
           <span class="step-num">Step 5/5</span>
-          <span class="step-name">深度互动</span>
+          <span class="step-name">Deep Interaction</span>
         </div>
         <div class="step-divider"></div>
         <span class="status-indicator" :class="statusClass">

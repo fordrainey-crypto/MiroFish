@@ -41,10 +41,22 @@
         <button class="banner-btn secondary" @click="exportHtml">
           Export HTML
         </button>
+        <button class="banner-btn secondary" @click="runSimplify" :disabled="simplifying">
+          {{ simplifying ? 'Simplifying…' : showSimplified ? 'Re-summarize' : 'Plain English Summary' }}
+        </button>
         <button class="banner-btn" @click="goToInteraction">
           Chat with Agents →
         </button>
       </div>
+    </div>
+
+    <!-- Plain English Summary Panel -->
+    <div v-if="showSimplified && simplifiedText" class="simplified-panel">
+      <div class="simplified-header">
+        <span class="simplified-title">Plain English Summary</span>
+        <button class="simplified-close" @click="showSimplified = false">✕</button>
+      </div>
+      <div class="simplified-body" v-html="simplifiedText.replace(/\n/g, '<br>')"></div>
     </div>
 
     <!-- Main Content Area -->
@@ -82,7 +94,7 @@ import GraphPanel from '../components/GraphPanel.vue'
 import Step4Report from '../components/Step4Report.vue'
 import { getProject, getGraphData } from '../api/graph'
 import { getSimulation } from '../api/simulation'
-import { getReport } from '../api/report'
+import { getReport, simplifyReport } from '../api/report'
 
 const route = useRoute()
 const router = useRouter()
@@ -103,6 +115,9 @@ const graphData = ref(null)
 const graphLoading = ref(false)
 const systemLogs = ref([])
 const currentStatus = ref('processing') // processing | completed | error
+const simplifiedText = ref(null)
+const simplifying = ref(false)
+const showSimplified = ref(false)
 
 // --- Computed Layout Styles ---
 const leftPanelStyle = computed(() => {
@@ -149,6 +164,26 @@ const exportHtml = () => {
   window.location.href = `/api/report/${currentReportId.value}/export-html`
 }
 
+const runSimplify = async () => {
+  if (simplifying.value) return
+  simplifying.value = true
+  addLog('Generating plain English summary...')
+  try {
+    const res = await simplifyReport(currentReportId.value)
+    if (res.data?.success) {
+      simplifiedText.value = res.data.data.simplified
+      showSimplified.value = true
+      addLog('Plain English summary ready')
+    } else {
+      addLog(`Simplify failed: ${res.data?.error || 'Unknown error'}`)
+    }
+  } catch (err) {
+    addLog(`Simplify error: ${err.message}`)
+  } finally {
+    simplifying.value = false
+  }
+}
+
 // --- Layout Methods ---
 const toggleMaximize = (target) => {
   if (viewMode.value === target) {
@@ -161,7 +196,7 @@ const toggleMaximize = (target) => {
 // --- Data Logic ---
 const loadReportData = async () => {
   try {
-    addLog(`加载报告数据: ${currentReportId.value}`)
+    addLog(`Loading report: ${currentReportId.value}`)
     
     // 获取 report 信息以获取 simulation_id
     const reportRes = await getReport(currentReportId.value)
@@ -180,7 +215,7 @@ const loadReportData = async () => {
             const projRes = await getProject(simData.project_id)
             if (projRes.success && projRes.data) {
               projectData.value = projRes.data
-              addLog(`项目加载成功: ${projRes.data.project_id}`)
+              addLog(`Project loaded: ${projRes.data.project_id}`)
               
               // 获取 graph 数据
               if (projRes.data.graph_id) {
@@ -191,24 +226,24 @@ const loadReportData = async () => {
         }
       }
     } else {
-      addLog(`获取报告信息失败: ${reportRes.error || '未知错误'}`)
+      addLog(`Failed to load report: ${reportRes.error || 'Unknown error'}`)
     }
   } catch (err) {
-    addLog(`加载异常: ${err.message}`)
+    addLog(`Load error: ${err.message}`)
   }
 }
 
 const loadGraph = async (graphId) => {
   graphLoading.value = true
-  
+
   try {
     const res = await getGraphData(graphId)
     if (res.success) {
       graphData.value = res.data
-      addLog('图谱数据加载成功')
+      addLog('Graph data loaded')
     }
   } catch (err) {
-    addLog(`图谱加载失败: ${err.message}`)
+    addLog(`Graph load failed: ${err.message}`)
   } finally {
     graphLoading.value = false
   }
@@ -229,7 +264,7 @@ watch(() => route.params.reportId, (newId) => {
 }, { immediate: true })
 
 onMounted(() => {
-  addLog('ReportView 初始化')
+  addLog('ReportView initialized')
   loadReportData()
 })
 </script>
@@ -422,5 +457,54 @@ onMounted(() => {
 
 .banner-btn.secondary:hover {
   background: #E8F7F2;
+}
+
+.banner-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Simplified Panel */
+.simplified-panel {
+  background: #FAFDF9;
+  border-bottom: 1px solid #C8E6C9;
+  padding: 16px 24px;
+  flex-shrink: 0;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.simplified-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.simplified-title {
+  font-weight: 700;
+  font-size: 13px;
+  color: #065F46;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.simplified-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #999;
+  font-size: 14px;
+  padding: 2px 6px;
+}
+
+.simplified-close:hover {
+  color: #333;
+}
+
+.simplified-body {
+  font-size: 14px;
+  line-height: 1.7;
+  color: #1A1A1A;
 }
 </style>
