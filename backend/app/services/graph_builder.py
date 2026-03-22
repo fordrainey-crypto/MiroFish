@@ -187,14 +187,21 @@ class GraphBuilderService:
     def create_graph(self, name: str) -> str:
         """创建Zep图谱（公开方法）"""
         graph_id = f"mirofish_{uuid.uuid4().hex[:16]}"
-        
-        self.client.graph.create(
-            graph_id=graph_id,
-            name=name,
-            description="MiroFish Social Simulation Graph"
-        )
-        
-        return graph_id
+
+        last_exc = None
+        for attempt in range(4):
+            try:
+                self.client.graph.create(
+                    graph_id=graph_id,
+                    name=name,
+                    description="MiroFish Social Simulation Graph"
+                )
+                return graph_id
+            except Exception as e:
+                last_exc = e
+                if attempt < 3:
+                    time.sleep(5 * (attempt + 1))
+        raise last_exc
     
     def set_ontology(self, graph_id: str, ontology: Dict[str, Any]):
         """设置图谱本体（公开方法）"""
