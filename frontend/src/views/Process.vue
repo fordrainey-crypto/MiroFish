@@ -589,6 +589,7 @@ const handleNewProject = async () => {
     if (pending.userLlmApiKey) formDataObj.append('user_llm_api_key', pending.userLlmApiKey)
     if (pending.userZepApiKey) formDataObj.append('user_zep_api_key', pending.userZepApiKey)
     if (pending.userLlmModelName) formDataObj.append('user_llm_model_name', pending.userLlmModelName)
+    if (pending.userLlmBaseUrl) formDataObj.append('user_llm_base_url', pending.userLlmBaseUrl)
     
     // 调用本体生成 API
     const response = await generateOntology(formDataObj)

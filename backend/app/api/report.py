@@ -109,6 +109,7 @@ def generate_report():
         _zep_key = project.user_zep_api_key or (None if Config.REQUIRE_USER_KEYS else Config.ZEP_API_KEY)
         _llm_key = project.user_llm_api_key or (None if Config.REQUIRE_USER_KEYS else Config.LLM_API_KEY)
         _llm_model = project.user_llm_model_name or Config.LLM_MODEL_NAME
+        _llm_base_url = project.user_llm_base_url or (None if Config.REQUIRE_USER_KEYS else Config.LLM_BASE_URL)
         if not _zep_key or not _llm_key:
             return jsonify({"success": False, "error": "user_keys_required",
                             "message": "Please provide your API keys in the setup screen."}), 400
@@ -141,7 +142,7 @@ def generate_report():
                 # 创建Report Agent — inject user keys if provided
                 from ..utils.llm_client import LLMClient
                 from ..services.zep_tools import ZepToolsService
-                _agent_llm = LLMClient(api_key=_llm_key, model=_llm_model)
+                _agent_llm = LLMClient(api_key=_llm_key, base_url=_llm_base_url, model=_llm_model)
                 _agent_zep = ZepToolsService(api_key=_zep_key, llm_client=_agent_llm)
                 agent = ReportAgent(
                     graph_id=graph_id,

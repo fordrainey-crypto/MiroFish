@@ -158,6 +158,7 @@ def generate_ontology():
         user_llm_api_key = request.form.get('user_llm_api_key') or None
         user_zep_api_key = request.form.get('user_zep_api_key') or None
         user_llm_model_name = request.form.get('user_llm_model_name') or None
+        user_llm_base_url = request.form.get('user_llm_base_url') or None
         
         logger.debug(f"项目名称: {project_name}")
         logger.debug(f"模拟需求: {simulation_requirement[:100]}...")
@@ -182,6 +183,7 @@ def generate_ontology():
         project.user_llm_api_key = user_llm_api_key
         project.user_zep_api_key = user_zep_api_key
         project.user_llm_model_name = user_llm_model_name
+        project.user_llm_base_url = user_llm_base_url
         logger.info(f"创建项目: {project.project_id}")
         
         # 保存文件并提取文本
@@ -229,6 +231,7 @@ def generate_ontology():
                             "message": "Please provide your API keys in the setup screen."}), 400
         llm_client = LLMClient(
             api_key=llm_key,
+            base_url=user_llm_base_url or (None if Config.REQUIRE_USER_KEYS else Config.LLM_BASE_URL),
             model=user_llm_model_name or Config.LLM_MODEL_NAME
         )
         generator = OntologyGenerator(llm_client=llm_client)

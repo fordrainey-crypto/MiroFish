@@ -246,9 +246,10 @@ import HistoryDatabase from '../components/HistoryDatabase.vue'
 const router = useRouter()
 
 // ── API Keys overlay ──────────────────────────────────────────────────────────
-const LS_LLM_KEY = 'mf_llm_key'
-const LS_ZEP_KEY = 'mf_zep_key'
-const LS_MODEL   = 'mf_model'
+const LS_LLM_KEY  = 'mf_llm_key'
+const LS_ZEP_KEY  = 'mf_zep_key'
+const LS_MODEL    = 'mf_model'
+const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
 
 const showKeysOverlay = ref(false)
 const keysError = ref('')
@@ -374,9 +375,10 @@ const startSimulation = () => {
   // 存储待上传的数据（including user keys）
   import('../store/pendingUpload.js').then(({ setPendingUpload }) => {
     setPendingUpload(files.value, formData.value.simulationRequirement, {
-      userLlmApiKey:   localStorage.getItem(LS_LLM_KEY) || '',
-      userZepApiKey:   localStorage.getItem(LS_ZEP_KEY) || '',
+      userLlmApiKey:    localStorage.getItem(LS_LLM_KEY) || '',
+      userZepApiKey:    localStorage.getItem(LS_ZEP_KEY) || '',
       userLlmModelName: localStorage.getItem(LS_MODEL) || '',
+      userLlmBaseUrl:   OPENROUTER_BASE_URL,
     })
 
     // 立即跳转到Process页面（使用特殊标识表示新建项目）

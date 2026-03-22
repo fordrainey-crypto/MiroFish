@@ -54,6 +54,7 @@ class Project:
     user_llm_api_key: Optional[str] = None
     user_zep_api_key: Optional[str] = None
     user_llm_model_name: Optional[str] = None  # e.g. "qwen/qwen-plus"
+    user_llm_base_url: Optional[str] = None    # e.g. "https://openrouter.ai/api/v1"
 
     # 错误信息
     error: Optional[str] = None

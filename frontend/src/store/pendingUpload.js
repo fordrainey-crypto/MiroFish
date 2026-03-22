@@ -11,6 +11,7 @@ const state = reactive({
   userLlmApiKey: '',
   userZepApiKey: '',
   userLlmModelName: '',
+  userLlmBaseUrl: '',
 })
 
 export function setPendingUpload(files, requirement, keys = {}) {
@@ -20,6 +21,7 @@ export function setPendingUpload(files, requirement, keys = {}) {
   state.userLlmApiKey = keys.userLlmApiKey || ''
   state.userZepApiKey = keys.userZepApiKey || ''
   state.userLlmModelName = keys.userLlmModelName || ''
+  state.userLlmBaseUrl = keys.userLlmBaseUrl || ''
 }
 
 export function getPendingUpload() {
@@ -30,6 +32,7 @@ export function getPendingUpload() {
     userLlmApiKey: state.userLlmApiKey,
     userZepApiKey: state.userZepApiKey,
     userLlmModelName: state.userLlmModelName,
+    userLlmBaseUrl: state.userLlmBaseUrl,
   }
 }
 
@@ -40,6 +43,7 @@ export function clearPendingUpload() {
   state.userLlmApiKey = ''
   state.userZepApiKey = ''
   state.userLlmModelName = ''
+  state.userLlmBaseUrl = ''
 }
 
 export default state
