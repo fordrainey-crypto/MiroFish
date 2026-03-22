@@ -152,6 +152,10 @@
 
         <!-- 右栏：交互控制台 -->
         <div class="right-panel">
+          <div class="onboarding-note">
+            <span class="onboarding-icon">ℹ</span>
+            <span>You'll need a free <a href="https://openrouter.ai/keys" target="_blank" class="onboarding-link">OpenRouter API key</a> and a <a href="https://cloud.getzep.com" target="_blank" class="onboarding-link">Zep Cloud key</a> to run a simulation. Click <strong>⚙ Keys</strong> in the top right to enter them.</span>
+          </div>
           <div class="console-box">
             <!-- 上传区域 -->
             <div class="console-section">
@@ -748,6 +752,35 @@ const startSimulation = () => {
 /* 右侧交互控制台 */
 .right-panel {
   flex: 1.2;
+}
+
+.onboarding-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: #F5F5F5;
+  border: 1px solid #E0E0E0;
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: #555;
+  line-height: 1.5;
+}
+
+.onboarding-icon {
+  color: #999;
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.onboarding-link {
+  color: #FF5722;
+  text-decoration: none;
+}
+
+.onboarding-link:hover {
+  text-decoration: underline;
 }
 
 .console-box {

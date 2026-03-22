@@ -91,7 +91,7 @@ const viewMode = ref('split') // graph | split | workbench
 
 // Step State
 const currentStep = ref(1) // 1: 图谱构建, 2: 环境搭建, 3: 开始模拟, 4: 报告生成, 5: 深度互动
-const stepNames = ['图谱构建', '环境搭建', '开始模拟', '报告生成', '深度互动']
+const stepNames = ['Graph Build', 'Env Setup', 'Start Simulation', 'Report', 'Deep Interaction']
 
 // Data State
 const currentProjectId = ref(route.params.projectId)

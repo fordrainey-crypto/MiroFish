@@ -150,7 +150,14 @@ def generate_ontology():
         logger.info("=== 开始生成本体定义 ===")
         
         # 获取参数
-        simulation_requirement = request.form.get('simulation_requirement', '')
+        simulation_requirement = request.form.get('simulation_requirement', '').strip()
+        if simulation_requirement:
+            simulation_requirement += (
+                "\n\nPlease write your final report and all intermediate analysis in plain "
+                "English. Lead with the most important finding. Structure your report so that "
+                "a non-specialist reader can understand the outcome and the key forces that "
+                "drove it without any prior knowledge of the topic."
+            )
         project_name = request.form.get('project_name', 'Unnamed Project')
         additional_context = request.form.get('additional_context', '')
 

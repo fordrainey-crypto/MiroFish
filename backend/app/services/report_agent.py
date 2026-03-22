@@ -881,7 +881,14 @@ _LANG_RULES = {
         "LANGUAGE RULE (MANDATORY): This report must be written entirely in English. "
         "All narrative prose, section headings, analysis, and blockquotes must be in English. "
         "When tool results contain Chinese text, translate it to English before including it in the report. "
-        "Do NOT mix languages. Non-English characters in prose are a formatting error."
+        "Do NOT mix languages. Non-English characters in prose are a formatting error.\n\n"
+        "STYLE RULES (MANDATORY): Write all reports in plain English for a general audience. "
+        "Avoid academic jargon, bureaucratic language, and passive voice. "
+        "Lead every section with its single most important finding stated clearly in one sentence before elaborating. "
+        "Choose section headings that describe what actually happened in the simulation, not generic labels like 'Analysis' or 'Overview.' "
+        "Define any technical or domain-specific terms the first time you use them. "
+        "Keep paragraphs short — no paragraph should exceed five sentences. "
+        "The report should read like a well-written news briefing, not a research paper."
     ),
     'zh': (
         "【语言规则（强制）】本报告必须全程使用中文撰写。"
