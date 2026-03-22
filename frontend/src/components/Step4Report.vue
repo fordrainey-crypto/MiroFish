@@ -127,14 +127,24 @@
             </div>
           </div>
 
-          <!-- Next Step Button - 在完成后显示 -->
-          <button v-if="isComplete" class="next-step-btn" @click="goToInteraction">
-            <span>进入深度互动</span>
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-              <polyline points="12 5 19 12 12 19"></polyline>
-            </svg>
-          </button>
+          <!-- Next Step Buttons - shown when complete -->
+          <div v-if="isComplete" class="completion-actions">
+            <button class="next-step-btn secondary" @click="exportHtml">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              <span>Export HTML</span>
+            </button>
+            <button class="next-step-btn" @click="goToInteraction">
+              <span>Chat with Agents</span>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+              </svg>
+            </button>
+          </div>
 
           <div class="workflow-divider"></div>
         </div>
@@ -408,6 +418,12 @@ const emit = defineEmits(['add-log', 'update-status'])
 const goToInteraction = () => {
   if (props.reportId) {
     router.push({ name: 'Interaction', params: { reportId: props.reportId } })
+  }
+}
+
+const exportHtml = () => {
+  if (props.reportId) {
+    window.location.href = `/api/report/${props.reportId}/export-html`
   }
 }
 
@@ -3397,13 +3413,19 @@ watch(() => props.reportId, (newId) => {
   font-size: 14px;
 }
 
+.completion-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 20px 0 20px;
+}
+
 .next-step-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  width: calc(100% - 40px);
-  margin: 4px 20px 0 20px;
+  width: 100%;
   padding: 14px 20px;
   font-size: 14px;
   font-weight: 600;
@@ -3415,8 +3437,19 @@ watch(() => props.reportId, (newId) => {
   transition: all 0.2s ease;
 }
 
+.next-step-btn.secondary {
+  background: #F3F4F6;
+  color: #374151;
+}
+
 .next-step-btn:hover {
   background: #374151;
+  color: #FFFFFF;
+}
+
+.next-step-btn.secondary:hover {
+  background: #E5E7EB;
+  color: #111827;
 }
 
 .next-step-btn svg {
@@ -3425,6 +3458,10 @@ watch(() => props.reportId, (newId) => {
 
 .next-step-btn:hover svg {
   transform: translateX(4px);
+}
+
+.next-step-btn.secondary:hover svg {
+  transform: translateY(2px);
 }
 
 /* Workflow Empty */

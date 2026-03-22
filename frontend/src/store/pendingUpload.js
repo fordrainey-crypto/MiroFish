@@ -1,26 +1,35 @@
 /**
- * 临时存储待上传的文件和需求
- * 用于首页点击启动引擎后立即跳转，在Process页面再进行API调用
+ * Temporary store for pending upload data.
+ * Set on Home.vue before routing to Process.vue, cleared after ontology API call.
  */
 import { reactive } from 'vue'
 
 const state = reactive({
   files: [],
   simulationRequirement: '',
-  isPending: false
+  isPending: false,
+  userLlmApiKey: '',
+  userZepApiKey: '',
+  userLlmModelName: '',
 })
 
-export function setPendingUpload(files, requirement) {
+export function setPendingUpload(files, requirement, keys = {}) {
   state.files = files
   state.simulationRequirement = requirement
   state.isPending = true
+  state.userLlmApiKey = keys.userLlmApiKey || ''
+  state.userZepApiKey = keys.userZepApiKey || ''
+  state.userLlmModelName = keys.userLlmModelName || ''
 }
 
 export function getPendingUpload() {
   return {
     files: state.files,
     simulationRequirement: state.simulationRequirement,
-    isPending: state.isPending
+    isPending: state.isPending,
+    userLlmApiKey: state.userLlmApiKey,
+    userZepApiKey: state.userZepApiKey,
+    userLlmModelName: state.userLlmModelName,
   }
 }
 
@@ -28,6 +37,9 @@ export function clearPendingUpload() {
   state.files = []
   state.simulationRequirement = ''
   state.isPending = false
+  state.userLlmApiKey = ''
+  state.userZepApiKey = ''
+  state.userLlmModelName = ''
 }
 
 export default state

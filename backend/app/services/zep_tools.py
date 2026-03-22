@@ -397,6 +397,32 @@ class InterviewResult:
         return "\n".join(text_parts)
 
 
+def _edge_salience_score(edge_name: str) -> int:
+    """
+    Score an edge by analytical importance.
+    High-signal: regulatory/legal/financial actions.
+    Low-signal: social media interactions (likes, follows, comments).
+    """
+    name_lower = (edge_name or "").lower()
+    # Low-signal social interactions → deprioritize
+    low_signal = ("liked_post", "liked post", "follows", "commented_on", "retweeted", "replied_to", "mentioned")
+    for token in low_signal:
+        if token in name_lower:
+            return 1
+    # High-signal regulatory / legal / financial
+    high_signal = (
+        "regulates", "filed_lawsuit", "subpoenaed", "subpoenas",
+        "filed_complaint", "fined", "investigated", "audits",
+        "invests_in", "funds", "acquired", "divests",
+        "advocates_for", "competes_with", "reports_on",
+        "employs", "partners_with", "merged", "testified",
+    )
+    for token in high_signal:
+        if token in name_lower:
+            return 10
+    return 5  # neutral
+
+
 class ZepToolsService:
     """
     Zep检索工具服务
@@ -429,6 +455,9 @@ class ZepToolsService:
         self.client = Zep(api_key=self.api_key)
         # LLM客户端用于InsightForge生成子问题
         self._llm_client = llm_client
+        # Session-level graph cache — populated on first fetch, shared across all tool calls
+        self._nodes_cache: Dict[str, List[NodeInfo]] = {}
+        self._edges_cache: Dict[str, List[EdgeInfo]] = {}
         logger.info("ZepToolsService 初始化完成")
     
     @property
@@ -649,7 +678,7 @@ class ZepToolsService:
     
     def get_all_nodes(self, graph_id: str) -> List[NodeInfo]:
         """
-        获取图谱的所有节点（分页获取）
+        获取图谱的所有节点（分页获取，session内缓存）
 
         Args:
             graph_id: 图谱ID
@@ -657,7 +686,11 @@ class ZepToolsService:
         Returns:
             节点列表
         """
-        logger.info(f"获取图谱 {graph_id} 的所有节点...")
+        if graph_id in self._nodes_cache:
+            logger.debug(f"节点缓存命中: graph_id={graph_id}, {len(self._nodes_cache[graph_id])} 个节点")
+            return self._nodes_cache[graph_id]
+
+        logger.info(f"获取图谱 {graph_id} 的所有节点（首次，将缓存结果）...")
 
         nodes = fetch_all_nodes(self.client, graph_id)
 
@@ -672,12 +705,17 @@ class ZepToolsService:
                 attributes=node.attributes or {}
             ))
 
-        logger.info(f"获取到 {len(result)} 个节点")
+        self._nodes_cache[graph_id] = result
+        logger.info(f"获取到 {len(result)} 个节点（已缓存）")
         return result
 
     def get_all_edges(self, graph_id: str, include_temporal: bool = True) -> List[EdgeInfo]:
         """
-        获取图谱的所有边（分页获取，包含时间信息）
+        获取图谱的所有边（分页获取，包含时间信息，session内缓存）
+
+        Cache note: edges are always fetched with include_temporal=True and cached that way.
+        The include_temporal flag is kept for API compatibility but the cache always contains
+        temporal fields (they're just None when the API doesn't return them).
 
         Args:
             graph_id: 图谱ID
@@ -686,7 +724,11 @@ class ZepToolsService:
         Returns:
             边列表（包含created_at, valid_at, invalid_at, expired_at）
         """
-        logger.info(f"获取图谱 {graph_id} 的所有边...")
+        if graph_id in self._edges_cache:
+            logger.debug(f"边缓存命中: graph_id={graph_id}, {len(self._edges_cache[graph_id])} 条边")
+            return self._edges_cache[graph_id]
+
+        logger.info(f"获取图谱 {graph_id} 的所有边（首次，将缓存结果）...")
 
         edges = fetch_all_edges(self.client, graph_id)
 
@@ -701,39 +743,49 @@ class ZepToolsService:
                 target_node_uuid=edge.target_node_uuid or ""
             )
 
-            # 添加时间信息
-            if include_temporal:
-                edge_info.created_at = getattr(edge, 'created_at', None)
-                edge_info.valid_at = getattr(edge, 'valid_at', None)
-                edge_info.invalid_at = getattr(edge, 'invalid_at', None)
-                edge_info.expired_at = getattr(edge, 'expired_at', None)
+            # 始终存储时间信息（缓存包含完整数据）
+            edge_info.created_at = getattr(edge, 'created_at', None)
+            edge_info.valid_at = getattr(edge, 'valid_at', None)
+            edge_info.invalid_at = getattr(edge, 'invalid_at', None)
+            edge_info.expired_at = getattr(edge, 'expired_at', None)
 
             result.append(edge_info)
 
-        logger.info(f"获取到 {len(result)} 条边")
+        self._edges_cache[graph_id] = result
+        logger.info(f"获取到 {len(result)} 条边（已缓存）")
         return result
     
     def get_node_detail(self, node_uuid: str) -> Optional[NodeInfo]:
         """
         获取单个节点的详细信息
-        
+
+        首先检查 session 内的节点缓存（避免重复 API 调用），
+        缓存未命中时才向 Zep API 发起请求。
+
         Args:
             node_uuid: 节点UUID
-            
+
         Returns:
             节点信息或None
         """
-        logger.info(f"获取节点详情: {node_uuid[:8]}...")
-        
+        # Check nodes cache first across all cached graphs
+        for cached_nodes in self._nodes_cache.values():
+            for node in cached_nodes:
+                if node.uuid == node_uuid:
+                    logger.debug(f"节点详情缓存命中: {node_uuid[:8]}...")
+                    return node
+
+        logger.info(f"获取节点详情（API）: {node_uuid[:8]}...")
+
         try:
             node = self._call_with_retry(
                 func=lambda: self.client.graph.node.get(uuid_=node_uuid),
                 operation_name=f"获取节点详情(uuid={node_uuid[:8]}...)"
             )
-            
+
             if not node:
                 return None
-            
+
             return NodeInfo(
                 uuid=getattr(node, 'uuid_', None) or getattr(node, 'uuid', ''),
                 name=node.name or "",
@@ -1208,23 +1260,29 @@ class ZepToolsService:
                 # 当前有效事实
                 active_facts.append(edge.fact)
         
-        # 基于查询进行相关性排序
+        # Build edge salience map for fact scoring
+        edge_salience: dict = {}
+        for edge in all_edges:
+            edge_salience[edge.fact] = _edge_salience_score(edge.name)
+
+        # 基于查询进行相关性排序，结合事实显著性分数
         query_lower = query.lower()
         keywords = [w.strip() for w in query_lower.replace(',', ' ').replace('，', ' ').split() if len(w.strip()) > 1]
-        
-        def relevance_score(fact: str) -> int:
+
+        def combined_score(fact: str) -> int:
             fact_lower = fact.lower()
-            score = 0
+            relevance = 0
             if query_lower in fact_lower:
-                score += 100
+                relevance += 100
             for kw in keywords:
                 if kw in fact_lower:
-                    score += 10
-            return score
-        
-        # 排序并限制数量
-        active_facts.sort(key=relevance_score, reverse=True)
-        historical_facts.sort(key=relevance_score, reverse=True)
+                    relevance += 10
+            salience = edge_salience.get(fact, 5)
+            return relevance + salience
+
+        # 排序并限制数量（显著性高的事实优先）
+        active_facts.sort(key=combined_score, reverse=True)
+        historical_facts.sort(key=combined_score, reverse=True)
         
         result.active_facts = active_facts[:limit]
         result.historical_facts = historical_facts[:limit] if include_expired else []

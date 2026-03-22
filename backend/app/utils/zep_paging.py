@@ -12,6 +12,7 @@ from typing import Any
 
 from zep_cloud import InternalServerError
 from zep_cloud.client import Zep
+from zep_cloud.core import ApiError
 
 from .logger import get_logger
 
@@ -19,8 +20,9 @@ logger = get_logger('mirofish.zep_paging')
 
 _DEFAULT_PAGE_SIZE = 100
 _MAX_NODES = 2000
-_DEFAULT_MAX_RETRIES = 3
+_DEFAULT_MAX_RETRIES = 5
 _DEFAULT_RETRY_DELAY = 2.0  # seconds, doubles each retry
+_INTER_PAGE_DELAY = 0.0  # no delay needed on paid plan (600 req/min)
 
 
 def _fetch_page_with_retry(
@@ -41,6 +43,25 @@ def _fetch_page_with_retry(
     for attempt in range(max_retries):
         try:
             return api_call(*args, **kwargs)
+        except ApiError as e:
+            if e.status_code == 429:
+                # Rate limited — respect retry-after header (default 60s)
+                retry_after = 60.0
+                if e.headers and "retry-after" in e.headers:
+                    try:
+                        retry_after = float(e.headers["retry-after"])
+                    except (ValueError, TypeError):
+                        pass
+                last_exception = e
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        f"Zep {page_description} rate limited (429), waiting {retry_after:.0f}s before retry {attempt + 1}/{max_retries}..."
+                    )
+                    time.sleep(retry_after)
+                else:
+                    logger.error(f"Zep {page_description} rate limited after {max_retries} attempts")
+            else:
+                raise
         except (ConnectionError, TimeoutError, OSError, InternalServerError) as e:
             last_exception = e
             if attempt < max_retries - 1:
@@ -63,6 +84,7 @@ def fetch_all_nodes(
     max_items: int = _MAX_NODES,
     max_retries: int = _DEFAULT_MAX_RETRIES,
     retry_delay: float = _DEFAULT_RETRY_DELAY,
+    inter_page_delay: float = _INTER_PAGE_DELAY,
 ) -> list[Any]:
     """分页获取图谱节点，最多返回 max_items 条（默认 2000）。每页请求自带重试。"""
     all_nodes: list[Any] = []
@@ -73,6 +95,9 @@ def fetch_all_nodes(
         kwargs: dict[str, Any] = {"limit": page_size}
         if cursor is not None:
             kwargs["uuid_cursor"] = cursor
+
+        if page_num > 0 and inter_page_delay > 0:
+            time.sleep(inter_page_delay)
 
         page_num += 1
         batch = _fetch_page_with_retry(
@@ -108,6 +133,7 @@ def fetch_all_edges(
     page_size: int = _DEFAULT_PAGE_SIZE,
     max_retries: int = _DEFAULT_MAX_RETRIES,
     retry_delay: float = _DEFAULT_RETRY_DELAY,
+    inter_page_delay: float = _INTER_PAGE_DELAY,
 ) -> list[Any]:
     """分页获取图谱所有边，返回完整列表。每页请求自带重试。"""
     all_edges: list[Any] = []
@@ -118,6 +144,9 @@ def fetch_all_edges(
         kwargs: dict[str, Any] = {"limit": page_size}
         if cursor is not None:
             kwargs["uuid_cursor"] = cursor
+
+        if page_num > 0 and inter_page_delay > 0:
+            time.sleep(inter_page_delay)
 
         page_num += 1
         batch = _fetch_page_with_retry(

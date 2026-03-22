@@ -466,12 +466,20 @@ def prepare_simulation():
         entity_types_list = data.get('entity_types')
         use_llm_for_profiles = data.get('use_llm_for_profiles', True)
         parallel_profile_count = data.get('parallel_profile_count', 5)
-        
+
+        # Resolve keys: user key takes priority; fall back to server key unless REQUIRE_USER_KEYS
+        _zep_key = project.user_zep_api_key or (None if Config.REQUIRE_USER_KEYS else Config.ZEP_API_KEY)
+        _llm_key = project.user_llm_api_key or (None if Config.REQUIRE_USER_KEYS else Config.LLM_API_KEY)
+        _llm_model = project.user_llm_model_name or Config.LLM_MODEL_NAME
+        if not _zep_key or not _llm_key:
+            return jsonify({"success": False, "error": "user_keys_required",
+                            "message": "Please provide your API keys in the setup screen."}), 400
+
         # ========== 同步获取实体数量（在后台任务启动前） ==========
         # 这样前端在调用prepare后立即就能获取到预期Agent总数
         try:
             logger.info(f"同步获取实体数量: graph_id={state.graph_id}")
-            reader = ZepEntityReader()
+            reader = ZepEntityReader(api_key=_zep_key)
             # 快速读取实体（不需要边信息，只统计数量）
             filtered_preview = reader.filter_defined_entities(
                 graph_id=state.graph_id,
@@ -582,7 +590,10 @@ def prepare_simulation():
                     defined_entity_types=entity_types_list,
                     use_llm_for_profiles=use_llm_for_profiles,
                     progress_callback=progress_callback,
-                    parallel_profile_count=parallel_profile_count
+                    parallel_profile_count=parallel_profile_count,
+                    zep_api_key=_zep_key,
+                    llm_api_key=_llm_key,
+                    llm_model_name=_llm_model,
                 )
                 
                 # 任务完成
@@ -1495,7 +1506,7 @@ def start_simulation():
             }), 400
 
         platform = data.get('platform', 'parallel')
-        max_rounds = data.get('max_rounds')  # 可选：最大模拟轮数
+        max_rounds = data.get('max_rounds', Config.OASIS_DEFAULT_MAX_ROUNDS)  # 可选：最大模拟轮数
         enable_graph_memory_update = data.get('enable_graph_memory_update', False)  # 可选：是否启用图谱记忆更新
         force = data.get('force', False)  # 可选：强制重新开始
 

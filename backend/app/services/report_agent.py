@@ -763,7 +763,13 @@ SECTION_SYSTEM_PROMPT_TEMPLATE = """\
    ```
 5. 保持与其他章节的逻辑连贯性
 6. 【避免重复】仔细阅读下方已完成的章节内容，不要重复描述相同的信息
-7. 【再次强调】不要添加任何标题！用**粗体**代替小节标题"""
+7. 【再次强调】不要添加任何标题！用**粗体**代替小节标题
+8. 【模态表述规范 — 必须遵守】
+   - 所有预测结论必须使用模态语言，明确标注这是模拟结果而非现实断言
+   - ✅ 正确：「模拟显示...」「基于模拟数据，高概率出现...」「模型预测...」「模拟场景中...」
+   - ❌ 禁止：「必然」「一定会」「不可逆地」「已经确定」等绝对化表述
+   - 每个核心结论应附注其依据（来自哪类Agent行为或事件）
+   - 英文报告对应措辞：「the simulation indicates...」「modeled outcomes suggest...」「with high probability in this scenario...」"""
 
 SECTION_USER_PROMPT_TEMPLATE = """\
 已完成的章节内容（请仔细阅读，避免重复）：
@@ -861,6 +867,31 @@ CHAT_OBSERVATION_SUFFIX = "\n\n请简洁回答问题。"
 # ═══════════════════════════════════════════════════════════════
 
 
+def _detect_report_language(text: str) -> str:
+    """
+    Detect whether the simulation_requirement is primarily English or Chinese.
+    Returns 'en' or 'zh'.
+    """
+    chinese_chars = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
+    return 'zh' if chinese_chars > len(text) * 0.1 else 'en'
+
+
+_LANG_RULES = {
+    'en': (
+        "LANGUAGE RULE (MANDATORY): This report must be written entirely in English. "
+        "All narrative prose, section headings, analysis, and blockquotes must be in English. "
+        "When tool results contain Chinese text, translate it to English before including it in the report. "
+        "Do NOT mix languages. Non-English characters in prose are a formatting error."
+    ),
+    'zh': (
+        "【语言规则（强制）】本报告必须全程使用中文撰写。"
+        "所有正文、分析和引用块均须为中文。"
+        "工具返回的英文内容需翻译为流畅的中文后再写入报告，保持原意不变。"
+        "禁止中英混杂。"
+    ),
+}
+
+
 class ReportAgent:
     """
     Report Agent - 模拟报告生成Agent
@@ -870,7 +901,7 @@ class ReportAgent:
     2. 生成阶段：逐章节生成内容，每章节可多次调用工具获取信息
     3. 反思阶段：检查内容完整性和准确性
     """
-    
+
     # 最大工具调用次数（每个章节）
     MAX_TOOL_CALLS_PER_SECTION = 5
     
@@ -901,20 +932,55 @@ class ReportAgent:
         self.graph_id = graph_id
         self.simulation_id = simulation_id
         self.simulation_requirement = simulation_requirement
-        
+
+        # Detect report language from simulation_requirement
+        self._lang = _detect_report_language(simulation_requirement)
+        self._lang_rule = _LANG_RULES[self._lang]
+
         self.llm = llm_client or LLMClient()
         self.zep_tools = zep_tools or ZepToolsService()
-        
+
+        # OASIS environment availability — checked once at report start
+        self._oasis_available: Optional[bool] = None
+
         # 工具定义
         self.tools = self._define_tools()
-        
+
         # 日志记录器（在 generate_report 中初始化）
         self.report_logger: Optional[ReportLogger] = None
         # 控制台日志记录器（在 generate_report 中初始化）
         self.console_logger: Optional[ReportConsoleLogger] = None
-        
+
         logger.info(f"ReportAgent 初始化完成: graph_id={graph_id}, simulation_id={simulation_id}")
     
+    def _check_oasis_available(self) -> bool:
+        """
+        Check once whether the OASIS simulation environment is running.
+        Result is cached in self._oasis_available for the lifetime of this report job.
+        """
+        if self._oasis_available is not None:
+            return self._oasis_available
+
+        try:
+            from .simulation_runner import SimulationRunner
+            from .simulation_ipc import SimulationIPCClient
+            import os
+
+            sim_dir = os.path.join(SimulationRunner.RUN_STATE_DIR, self.simulation_id)
+            if not os.path.exists(sim_dir):
+                self._oasis_available = False
+                logger.info(f"OASIS pre-flight: sim_dir not found for {self.simulation_id} — interview_agents disabled")
+                return False
+
+            ipc_client = SimulationIPCClient(sim_dir)
+            self._oasis_available = ipc_client.check_env_alive()
+            logger.info(f"OASIS pre-flight: simulation {self.simulation_id} alive={self._oasis_available}")
+        except Exception as e:
+            logger.warning(f"OASIS pre-flight check failed: {e}")
+            self._oasis_available = False
+
+        return self._oasis_available
+
     def _define_tools(self) -> Dict[str, Dict[str, Any]]:
         """定义可用工具"""
         return {
@@ -952,6 +1018,38 @@ class ReportAgent:
             }
         }
     
+    def _dedup_tool_result(self, result: str, seen_hashes: set) -> str:
+        """
+        Remove fact lines from a tool result that have already appeared in an earlier
+        tool call within the same section. Updates seen_hashes in-place.
+
+        Lines that begin with a digit+period (numbered facts like "1. Some fact") or
+        a blockquote marker ("> ...") are candidates for deduplication.
+        Other structural lines (headers, blank lines) are always kept.
+        """
+        import hashlib
+        lines = result.split("\n")
+        deduped = []
+        removed = 0
+        for line in lines:
+            stripped = line.strip()
+            # Only dedup fact-like lines
+            is_fact = (
+                stripped.startswith(">") or
+                (len(stripped) > 2 and stripped[0].isdigit() and stripped[1] in ".、")
+            )
+            if is_fact and len(stripped) > 20:
+                h = hashlib.md5(stripped.encode()).hexdigest()
+                if h in seen_hashes:
+                    removed += 1
+                    continue
+                seen_hashes.add(h)
+            deduped.append(line)
+
+        if removed:
+            deduped.append(f"\n[{removed} duplicate fact(s) suppressed — already provided in a prior tool call]")
+        return "\n".join(deduped)
+
     def _execute_tool(self, tool_name: str, parameters: Dict[str, Any], report_context: str = "") -> str:
         """
         执行工具调用
@@ -1005,6 +1103,13 @@ class ReportAgent:
                 return result.to_text()
             
             elif tool_name == "interview_agents":
+                # Pre-flight: OASIS must be running for real agent interviews
+                if not self._check_oasis_available():
+                    logger.warning("interview_agents skipped — OASIS environment is offline")
+                    return (
+                        "【interview_agents 不可用】模拟环境（OASIS）当前处于离线状态，无法采访真实Agent。"
+                        "请改用 insight_forge 或 panorama_search 从知识图谱中检索Agent行为数据。"
+                    )
                 # 深度采访 - 调用真实的OASIS采访API获取模拟Agent的回答（双平台）
                 interview_topic = parameters.get("interview_topic", parameters.get("query", ""))
                 max_agents = parameters.get("max_agents", 5)
@@ -1162,7 +1267,7 @@ class ReportAgent:
         if progress_callback:
             progress_callback("planning", 30, "正在生成报告大纲...")
         
-        system_prompt = PLAN_SYSTEM_PROMPT
+        system_prompt = PLAN_SYSTEM_PROMPT + "\n\n" + self._lang_rule
         user_prompt = PLAN_USER_PROMPT_TEMPLATE.format(
             simulation_requirement=self.simulation_requirement,
             total_nodes=context.get('graph_statistics', {}).get('total_nodes', 0),
@@ -1257,7 +1362,7 @@ class ReportAgent:
             simulation_requirement=self.simulation_requirement,
             section_title=section.title,
             tools_description=self._get_tools_description(),
-        )
+        ) + "\n\n" + self._lang_rule
 
         # 构建用户prompt - 每个已完成章节各传入最大4000字
         if previous_sections:
@@ -1287,6 +1392,8 @@ class ReportAgent:
         conflict_retries = 0  # 工具调用与Final Answer同时出现的连续冲突次数
         used_tools = set()  # 记录已调用过的工具名
         all_tools = {"insight_forge", "panorama_search", "quick_search", "interview_agents"}
+        # Dedup: track fact lines seen across all tool calls in this section
+        _seen_fact_hashes: set = set()
 
         # 报告上下文，用于InsightForge的子问题生成
         report_context = f"章节标题: {section.title}\n模拟需求: {self.simulation_requirement}"
@@ -1447,6 +1554,9 @@ class ReportAgent:
                 tool_calls_count += 1
                 used_tools.add(call['name'])
 
+                # Deduplicate facts in tool result before injecting into context
+                result = self._dedup_tool_result(result, _seen_fact_hashes)
+
                 # 构建未使用工具提示
                 unused_tools = all_tools - used_tools
                 unused_hint = ""
@@ -1594,7 +1704,18 @@ class ReportAgent:
                 completed_sections=[]
             )
             ReportManager.save_report(report)
-            
+
+            # Pre-flight: check OASIS availability once before any tool calls
+            oasis_ok = self._check_oasis_available()
+            if not oasis_ok:
+                logger.warning(f"Report {report_id}: OASIS offline — interview_agents will be skipped during generation")
+                # Update interview_agents tool description so the LLM avoids calling it
+                if "interview_agents" in self.tools:
+                    self.tools["interview_agents"]["description"] = (
+                        "【当前不可用】模拟环境（OASIS）已离线。请勿调用此工具。"
+                        "请改用 insight_forge 或 panorama_search 检索知识图谱数据。"
+                    )
+
             # 阶段1: 规划大纲
             report.status = ReportStatus.PLANNING
             ReportManager.update_progress(

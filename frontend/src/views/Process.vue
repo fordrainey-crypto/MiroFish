@@ -585,6 +585,10 @@ const handleNewProject = async () => {
       formDataObj.append('files', file)
     })
     formDataObj.append('simulation_requirement', pending.simulationRequirement)
+    // Pass user-provided API keys (BYOK) if present
+    if (pending.userLlmApiKey) formDataObj.append('user_llm_api_key', pending.userLlmApiKey)
+    if (pending.userZepApiKey) formDataObj.append('user_zep_api_key', pending.userZepApiKey)
+    if (pending.userLlmModelName) formDataObj.append('user_llm_model_name', pending.userLlmModelName)
     
     // 调用本体生成 API
     const response = await generateOntology(formDataObj)

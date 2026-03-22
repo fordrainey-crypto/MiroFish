@@ -97,13 +97,21 @@ def generate_report():
                 "success": False,
                 "error": "缺少图谱ID，请确保已构建图谱"
             }), 400
-        
+
         simulation_requirement = project.simulation_requirement
         if not simulation_requirement:
             return jsonify({
                 "success": False,
                 "error": "缺少模拟需求描述"
             }), 400
+
+        # Resolve user keys: project-level → server fallback (unless REQUIRE_USER_KEYS)
+        _zep_key = project.user_zep_api_key or (None if Config.REQUIRE_USER_KEYS else Config.ZEP_API_KEY)
+        _llm_key = project.user_llm_api_key or (None if Config.REQUIRE_USER_KEYS else Config.LLM_API_KEY)
+        _llm_model = project.user_llm_model_name or Config.LLM_MODEL_NAME
+        if not _zep_key or not _llm_key:
+            return jsonify({"success": False, "error": "user_keys_required",
+                            "message": "Please provide your API keys in the setup screen."}), 400
         
         # 提前生成 report_id，以便立即返回给前端
         import uuid
@@ -130,11 +138,17 @@ def generate_report():
                     message="初始化Report Agent..."
                 )
                 
-                # 创建Report Agent
+                # 创建Report Agent — inject user keys if provided
+                from ..utils.llm_client import LLMClient
+                from ..services.zep_tools import ZepToolsService
+                _agent_llm = LLMClient(api_key=_llm_key, model=_llm_model)
+                _agent_zep = ZepToolsService(api_key=_zep_key, llm_client=_agent_llm)
                 agent = ReportAgent(
                     graph_id=graph_id,
                     simulation_id=simulation_id,
-                    simulation_requirement=simulation_requirement
+                    simulation_requirement=simulation_requirement,
+                    llm_client=_agent_llm,
+                    zep_tools=_agent_zep,
                 )
                 
                 # 进度回调
@@ -434,6 +448,178 @@ def download_report(report_id: str):
             "error": str(e),
             "traceback": traceback.format_exc()
         }), 500
+
+
+def _md_to_html(md: str) -> str:
+    """Convert markdown to HTML (subset: headings, bold, lists, blockquotes, code, hr)."""
+    import re, html as htmllib
+
+    lines = md.split('\n')
+    out = []
+    in_ul = False
+    in_code = False
+
+    def close_ul():
+        nonlocal in_ul
+        if in_ul:
+            out.append('</ul>')
+            in_ul = False
+
+    for line in lines:
+        # fenced code block toggle
+        if line.strip().startswith('```'):
+            if in_code:
+                out.append('</code></pre>')
+                in_code = False
+            else:
+                close_ul()
+                out.append('<pre><code>')
+                in_code = True
+            continue
+        if in_code:
+            out.append(htmllib.escape(line))
+            continue
+
+        # headings
+        m = re.match(r'^(#{1,4})\s+(.*)', line)
+        if m:
+            close_ul()
+            lvl = len(m.group(1)) + 1  # h2-h5
+            lvl = min(lvl, 5)
+            out.append(f'<h{lvl}>{htmllib.escape(m.group(2))}</h{lvl}>')
+            continue
+
+        # hr
+        if re.match(r'^[-*_]{3,}\s*$', line):
+            close_ul()
+            out.append('<hr/>')
+            continue
+
+        # blockquote
+        if line.startswith('> '):
+            close_ul()
+            content = line[2:]
+            content = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', content)
+            out.append(f'<blockquote>{content}</blockquote>')
+            continue
+
+        # unordered list
+        if re.match(r'^[-*] ', line):
+            if not in_ul:
+                out.append('<ul>')
+                in_ul = True
+            item = line[2:]
+            item = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', item)
+            out.append(f'<li>{item}</li>')
+            continue
+
+        close_ul()
+
+        # blank line → paragraph break
+        if not line.strip():
+            out.append('<br/>')
+            continue
+
+        # inline: bold, italic
+        line = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', line)
+        line = re.sub(r'\*(.+?)\*', r'<em>\1</em>', line)
+        out.append(f'<p>{line}</p>')
+
+    close_ul()
+    if in_code:
+        out.append('</code></pre>')
+
+    return '\n'.join(out)
+
+
+@report_bp.route('/<report_id>/export-html', methods=['GET'])
+def export_report_html(report_id: str):
+    """
+    Export report as a self-contained HTML file for portfolio hosting.
+    Includes all styles inline — no backend dependency needed to view.
+    """
+    import tempfile
+    try:
+        report = ReportManager.get_report(report_id)
+        if not report:
+            return jsonify({"success": False, "error": f"报告不存在: {report_id}"}), 404
+
+        md_path = ReportManager._get_report_markdown_path(report_id)
+        if os.path.exists(md_path):
+            with open(md_path, 'r', encoding='utf-8') as f:
+                md_content = f.read()
+        else:
+            md_content = report.markdown_content or ""
+
+        html_body = _md_to_html(md_content)
+        title = report.simulation_requirement or report_id
+        completed_at = report.completed_at or report.created_at or ""
+        demo_url = Config.DEMO_URL
+
+        html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{title[:80]} — MiroFish Report</title>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{background:#0d0d14;color:#c9d1d9;font-family:'Segoe UI',system-ui,sans-serif;line-height:1.7;padding:0}}
+header{{background:#161622;border-bottom:1px solid #30363d;padding:32px 48px;max-width:900px;margin:0 auto}}
+header h1{{font-size:13px;text-transform:uppercase;letter-spacing:3px;color:#58a6ff;margin-bottom:12px}}
+header .topic{{font-size:22px;font-weight:600;color:#e6edf3;margin-bottom:8px}}
+header .meta{{font-size:13px;color:#8b949e;margin-bottom:20px}}
+.cta{{display:inline-block;background:#238636;color:#fff;text-decoration:none;padding:10px 20px;border-radius:6px;font-size:14px;font-weight:500}}
+.cta:hover{{background:#2ea043}}
+main{{max-width:900px;margin:0 auto;padding:40px 48px}}
+h2{{font-size:20px;font-weight:600;color:#e6edf3;margin:36px 0 12px;border-bottom:1px solid #21262d;padding-bottom:8px}}
+h3{{font-size:17px;font-weight:600;color:#c9d1d9;margin:24px 0 8px}}
+h4,h5{{font-size:15px;color:#8b949e;margin:18px 0 6px}}
+p{{margin-bottom:12px;color:#c9d1d9}}
+ul{{margin:8px 0 16px 24px}}
+li{{margin-bottom:4px}}
+strong{{color:#e6edf3;font-weight:600}}
+em{{color:#a5d6ff;font-style:italic}}
+blockquote{{border-left:3px solid #388bfd;padding:8px 16px;margin:16px 0;background:#161b22;color:#8b949e;border-radius:0 4px 4px 0}}
+pre{{background:#161b22;border:1px solid #30363d;border-radius:6px;padding:16px;overflow-x:auto;margin:16px 0}}
+code{{font-family:'JetBrains Mono','Fira Code',monospace;font-size:13px;color:#e6edf3}}
+hr{{border:none;border-top:1px solid #21262d;margin:32px 0}}
+br{{display:block;height:6px}}
+footer{{max-width:900px;margin:0 auto;padding:24px 48px;border-top:1px solid #21262d;font-size:12px;color:#484f58}}
+footer a{{color:#58a6ff;text-decoration:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1>MiroFish — AI Social Simulation Report</h1>
+  <div class="topic">{title}</div>
+  <div class="meta">Generated {completed_at}</div>
+  <a class="cta" href="{demo_url}">&#9654; Run Your Own Simulation</a>
+</header>
+<main>
+{html_body}
+</main>
+<footer>
+  <p>Built with <a href="https://github.com/fordrainey/MiroFish">MiroFish</a> — AI-powered social simulation &amp; prediction.</p>
+</footer>
+</body>
+</html>"""
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as f:
+            f.write(html)
+            temp_path = f.name
+
+        slug = title[:30].replace(' ', '-').lower()
+        return send_file(
+            temp_path,
+            as_attachment=True,
+            download_name=f"mirofish-{slug}.html",
+            mimetype='text/html'
+        )
+
+    except Exception as e:
+        logger.error(f"导出HTML报告失败: {str(e)}")
+        return jsonify({"success": False, "error": str(e), "traceback": traceback.format_exc()}), 500
 
 
 @report_bp.route('/<report_id>', methods=['DELETE'])
