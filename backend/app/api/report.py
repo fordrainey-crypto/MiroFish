@@ -539,7 +539,6 @@ def export_report_html(report_id: str):
     Export report as a self-contained HTML file for portfolio hosting.
     Includes all styles inline — no backend dependency needed to view.
     """
-    import tempfile
     try:
         report = ReportManager.get_report(report_id)
         if not report:
@@ -606,16 +605,12 @@ footer a{{color:#58a6ff;text-decoration:none}}
 </body>
 </html>"""
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as f:
-            f.write(html)
-            temp_path = f.name
-
         slug = title[:30].replace(' ', '-').lower()
-        return send_file(
-            temp_path,
-            as_attachment=True,
-            download_name=f"mirofish-{slug}.html",
-            mimetype='text/html'
+        from flask import Response
+        return Response(
+            html,
+            mimetype='text/html',
+            headers={'Content-Disposition': f'attachment; filename="mirofish-{slug}.html"'}
         )
 
     except Exception as e:

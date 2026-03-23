@@ -170,8 +170,8 @@ const runSimplify = async () => {
   addLog('Generating plain English summary...')
   try {
     const res = await simplifyReport(currentReportId.value)
-    if (res.data?.success) {
-      simplifiedText.value = res.data.data.simplified
+    if (res.success) {
+      simplifiedText.value = res.data.simplified
       showSimplified.value = true
       addLog('Plain English summary ready')
     } else {
