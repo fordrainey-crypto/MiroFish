@@ -38,8 +38,8 @@
       <span class="banner-icon">✓</span>
       <span class="banner-text">Your report is ready!</span>
       <div class="banner-actions">
-        <button class="banner-btn secondary" @click="exportHtml">
-          Export HTML
+        <button class="banner-btn secondary" @click="shareReport">
+          Share Report
         </button>
         <button class="banner-btn secondary" @click="runSimplify" :disabled="simplifying">
           {{ simplifying ? 'Simplifying…' : showSimplified ? 'Re-summarize' : 'Plain English Summary' }}
@@ -162,6 +162,10 @@ const goToInteraction = () => {
 
 const exportHtml = () => {
   window.location.href = `/api/report/${currentReportId.value}/export-html`
+}
+
+const shareReport = () => {
+  window.open(`/api/report/${currentReportId.value}/view`, '_blank')
 }
 
 const runSimplify = async () => {

@@ -618,6 +618,228 @@ footer a{{color:#58a6ff;text-decoration:none}}
         return jsonify({"success": False, "error": str(e), "traceback": traceback.format_exc()}), 500
 
 
+@report_bp.route('/<report_id>/view', methods=['GET'])
+def view_report(report_id: str):
+    """
+    Serve a shareable, self-contained HTML page for a report.
+    Opens in the browser (no Content-Disposition attachment).
+    Includes: metadata header, plain-English summary (if cached), full report, collapsible agent log.
+    """
+    import re, html as htmllib
+
+    try:
+        report = ReportManager.get_report(report_id)
+        if not report:
+            return f"<h1>Report not found</h1><p>No report with ID <code>{report_id}</code> exists.</p>", 404
+
+        report_dir = ReportManager._get_report_folder(report_id)
+
+        # --- Report text ---
+        md_path = ReportManager._get_report_markdown_path(report_id)
+        if os.path.exists(md_path):
+            with open(md_path, 'r', encoding='utf-8') as f:
+                md_content = f.read()
+        else:
+            md_content = report.markdown_content or ""
+
+        # --- Plain English summary (cached) ---
+        simplified_path = os.path.join(report_dir, "simplified.md")
+        simplified_content = None
+        if os.path.exists(simplified_path):
+            with open(simplified_path, 'r', encoding='utf-8') as f:
+                simplified_content = f.read()
+
+        # --- Agent log ---
+        agent_logs = ReportManager.get_agent_log_stream(report_id)
+        agent_logs = agent_logs[:500]  # cap to avoid oversized pages
+
+        # --- Render helpers ---
+        def _escape(s):
+            return htmllib.escape(str(s)) if s else ''
+
+        def _render_log_timeline(logs):
+            if not logs:
+                return '<p style="color:#999;font-size:13px;">No agent log available.</p>'
+
+            type_colors = {
+                'report_start': '#6366f1',
+                'planning_start': '#8b5cf6',
+                'planning_complete': '#7c3aed',
+                'section_start': '#0ea5e9',
+                'tool_call': '#f59e0b',
+                'tool_result': '#10b981',
+                'llm_response': '#6366f1',
+                'section_complete': '#22c55e',
+                'report_complete': '#16a34a',
+                'error': '#ef4444',
+            }
+
+            rows = []
+            for entry in logs:
+                etype = entry.get('type', 'unknown')
+                ts = entry.get('timestamp', '')
+                if ts and 'T' in ts:
+                    ts = ts.split('T')[1][:8]
+
+                # Build a readable summary line
+                summary = ''
+                if etype == 'tool_call':
+                    summary = entry.get('tool_name', '') or entry.get('tool', '')
+                    args = entry.get('args', {}) or {}
+                    if isinstance(args, dict) and args:
+                        first_val = next(iter(args.values()), '')
+                        summary += f': {str(first_val)[:80]}'
+                elif etype == 'section_start':
+                    summary = entry.get('title', '') or entry.get('section_title', '')
+                elif etype == 'section_complete':
+                    summary = entry.get('title', '') or entry.get('section_title', '')
+                elif etype == 'llm_response':
+                    content = entry.get('content', '') or entry.get('response', '')
+                    summary = str(content)[:120] if content else ''
+                elif etype == 'tool_result':
+                    result = entry.get('result', '') or entry.get('content', '')
+                    summary = str(result)[:120] if result else ''
+                else:
+                    for key in ('message', 'content', 'description', 'title'):
+                        val = entry.get(key)
+                        if val:
+                            summary = str(val)[:120]
+                            break
+
+                color = type_colors.get(etype, '#94a3b8')
+                rows.append(
+                    f'<div class="log-row">'
+                    f'<span class="log-ts">{_escape(ts)}</span>'
+                    f'<span class="log-badge" style="background:{color}">{_escape(etype)}</span>'
+                    f'<span class="log-summary">{_escape(summary)}</span>'
+                    f'</div>'
+                )
+            return '\n'.join(rows)
+
+        title = report.simulation_requirement or report_id
+        completed_at = report.completed_at or report.created_at or ''
+        demo_url = Config.DEMO_URL
+
+        report_html = _md_to_html(md_content)
+        simplified_html = _md_to_html(simplified_content) if simplified_content else None
+        log_html = _render_log_timeline(agent_logs)
+
+        # --- TL;DR section ---
+        if simplified_html:
+            tldr_section = f'''
+<section class="tldr-card">
+  <div class="tldr-label">TL;DR — Plain English Summary</div>
+  <div class="tldr-body">{simplified_html}</div>
+</section>'''
+        else:
+            tldr_section = '''
+<section class="tldr-card tldr-missing">
+  <div class="tldr-label">TL;DR — Plain English Summary</div>
+  <p class="tldr-hint">Open this report in the MiroFish app and click <strong>Plain English Summary</strong> to generate this section.</p>
+</section>'''
+
+        page_html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{_escape(title[:80])} — MiroFish Report</title>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{background:#fafafa;color:#1a1a1a;font-family:'Space Grotesk','Segoe UI',system-ui,sans-serif;line-height:1.7}}
+a{{color:#2563eb;text-decoration:none}}
+a:hover{{text-decoration:underline}}
+
+/* Header */
+.page-header{{background:#fff;border-bottom:1px solid #e5e7eb;padding:32px 48px 28px}}
+.page-header .brand{{font-size:11px;font-weight:700;letter-spacing:3px;color:#6b7280;text-transform:uppercase;margin-bottom:12px}}
+.page-header h1{{font-size:26px;font-weight:700;color:#111;line-height:1.3;margin-bottom:10px}}
+.page-header .meta{{font-size:13px;color:#6b7280;margin-bottom:20px}}
+.cta-btn{{display:inline-block;background:#111;color:#fff;padding:9px 20px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none}}
+.cta-btn:hover{{background:#374151;text-decoration:none}}
+
+/* Layout */
+.page-body{{max-width:860px;margin:0 auto;padding:40px 48px 80px}}
+
+/* TL;DR card */
+.tldr-card{{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:24px 28px;margin-bottom:40px}}
+.tldr-missing{{background:#f9fafb;border-color:#e5e7eb}}
+.tldr-label{{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#16a34a;margin-bottom:12px}}
+.tldr-missing .tldr-label{{color:#9ca3af}}
+.tldr-body p{{margin-bottom:10px;font-size:15px;color:#1a1a1a}}
+.tldr-body h2,.tldr-body h3{{margin:18px 0 8px;color:#111}}
+.tldr-body ul{{margin:6px 0 12px 20px}}
+.tldr-hint{{font-size:14px;color:#6b7280}}
+
+/* Report content */
+.report-content h2{{font-size:20px;font-weight:700;color:#111;margin:36px 0 12px;padding-bottom:8px;border-bottom:1px solid #e5e7eb}}
+.report-content h3{{font-size:17px;font-weight:600;color:#374151;margin:24px 0 8px}}
+.report-content h4,.report-content h5{{font-size:14px;font-weight:600;color:#6b7280;margin:16px 0 6px}}
+.report-content p{{margin-bottom:12px;font-size:15px;color:#374151}}
+.report-content ul{{margin:6px 0 14px 22px}}
+.report-content li{{margin-bottom:4px;font-size:15px;color:#374151}}
+.report-content strong{{color:#111;font-weight:600}}
+.report-content em{{color:#4b5563;font-style:italic}}
+.report-content blockquote{{border-left:3px solid #93c5fd;padding:8px 16px;margin:16px 0;background:#eff6ff;border-radius:0 4px 4px 0;color:#4b5563}}
+.report-content pre{{background:#1e293b;border-radius:6px;padding:16px;overflow-x:auto;margin:16px 0}}
+.report-content code{{font-family:'JetBrains Mono','Fira Code',monospace;font-size:13px;color:#e2e8f0}}
+.report-content hr{{border:none;border-top:1px solid #e5e7eb;margin:28px 0}}
+.report-content br{{display:block;height:4px}}
+
+/* Agent log */
+.log-details{{margin-top:48px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden}}
+.log-details summary{{padding:14px 20px;background:#f9fafb;cursor:pointer;font-size:13px;font-weight:600;color:#374151;user-select:none;list-style:none}}
+.log-details summary::-webkit-details-marker{{display:none}}
+.log-details summary::before{{content:"▶ ";font-size:10px;color:#9ca3af}}
+.log-details[open] summary::before{{content:"▼ ";}}
+.log-inner{{padding:12px 0;max-height:480px;overflow-y:auto}}
+.log-row{{display:flex;align-items:baseline;gap:10px;padding:4px 20px;font-size:12px;line-height:1.5}}
+.log-row:hover{{background:#f9fafb}}
+.log-ts{{font-family:'JetBrains Mono',monospace;color:#9ca3af;white-space:nowrap;flex-shrink:0;font-size:11px}}
+.log-badge{{font-size:10px;font-weight:600;padding:1px 7px;border-radius:10px;color:#fff;white-space:nowrap;flex-shrink:0}}
+.log-summary{{color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+
+/* Footer */
+.page-footer{{max-width:860px;margin:0 auto;padding:0 48px 40px;border-top:1px solid #e5e7eb;padding-top:24px;font-size:12px;color:#9ca3af}}
+</style>
+</head>
+<body>
+<header class="page-header">
+  <div class="brand">MiroFish — AI Social Simulation</div>
+  <h1>{_escape(title)}</h1>
+  <div class="meta">Generated {_escape(completed_at)}</div>
+  <a class="cta-btn" href="{_escape(demo_url)}">&#9654; Run Your Own Simulation</a>
+</header>
+
+<div class="page-body">
+  {tldr_section}
+
+  <section class="report-content">
+    {report_html}
+  </section>
+
+  <details class="log-details">
+    <summary>Agent Workflow Log ({len(agent_logs)} events)</summary>
+    <div class="log-inner">
+      {log_html}
+    </div>
+  </details>
+</div>
+
+<footer class="page-footer">
+  <p>Built with <a href="https://github.com/fordrainey/MiroFish">MiroFish</a> — AI-powered social simulation &amp; prediction.</p>
+</footer>
+</body>
+</html>"""
+
+        from flask import Response
+        return Response(page_html, mimetype='text/html')
+
+    except Exception as e:
+        logger.error(f"view_report failed: {str(e)}")
+        return f"<h1>Error</h1><pre>{_escape(str(e))}</pre>", 500
+
+
 @report_bp.route('/<report_id>', methods=['DELETE'])
 def delete_report(report_id: str):
     """删除报告"""
@@ -1265,6 +1487,14 @@ def simplify_report(report_id: str):
             temperature=0.3,
             max_tokens=4096
         )
+
+        # Cache to disk so the /view page can include it without re-running the LLM
+        simplified_path = os.path.join(ReportManager._get_report_folder(report_id), "simplified.md")
+        try:
+            with open(simplified_path, 'w', encoding='utf-8') as f:
+                f.write(simplified)
+        except Exception:
+            pass  # Cache failure is non-fatal
 
         return jsonify({"success": True, "data": {"simplified": simplified}})
 
