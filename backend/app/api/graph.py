@@ -187,6 +187,7 @@ def generate_ontology():
         # 创建项目
         project = ProjectManager.create_project(name=project_name)
         project.simulation_requirement = simulation_requirement
+        # Keys are held in-memory for this request only — not saved to disk
         project.user_llm_api_key = user_llm_api_key
         project.user_zep_api_key = user_zep_api_key
         project.user_llm_model_name = user_llm_model_name
@@ -328,7 +329,17 @@ def build_graph():
                 "success": False,
                 "error": f"项目不存在: {project_id}"
             }), 404
-        
+
+        # Accept keys from request (keys are never persisted to disk)
+        if data.get('user_llm_api_key'):
+            project.user_llm_api_key = data['user_llm_api_key']
+        if data.get('user_zep_api_key'):
+            project.user_zep_api_key = data['user_zep_api_key']
+        if data.get('user_llm_model_name'):
+            project.user_llm_model_name = data['user_llm_model_name']
+        if data.get('user_llm_base_url'):
+            project.user_llm_base_url = data['user_llm_base_url']
+
         # 检查项目状态
         force = data.get('force', False)  # 强制重新构建
         

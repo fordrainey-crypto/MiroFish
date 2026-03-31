@@ -5,7 +5,12 @@ import service, { requestWithRetry } from './index'
  * @param {Object} data - { simulation_id, force_regenerate? }
  */
 export const generateReport = (data) => {
-  return requestWithRetry(() => service.post('/api/report/generate', data), 3, 1000)
+  const keys = {
+    user_llm_api_key: localStorage.getItem('mf_llm_key') || undefined,
+    user_zep_api_key: localStorage.getItem('mf_zep_key') || undefined,
+    user_llm_model_name: localStorage.getItem('mf_model') || undefined,
+  }
+  return requestWithRetry(() => service.post('/api/report/generate', { ...data, ...keys }), 3, 1000)
 }
 
 /**
@@ -47,7 +52,12 @@ export const getReport = (reportId) => {
  * @param {Object} data - { simulation_id, message, chat_history? }
  */
 export const chatWithReport = (data) => {
-  return requestWithRetry(() => service.post('/api/report/chat', data), 3, 1000)
+  const keys = {
+    user_llm_api_key: localStorage.getItem('mf_llm_key') || undefined,
+    user_zep_api_key: localStorage.getItem('mf_zep_key') || undefined,
+    user_llm_model_name: localStorage.getItem('mf_model') || undefined,
+  }
+  return requestWithRetry(() => service.post('/api/report/chat', { ...data, ...keys }), 3, 1000)
 }
 
 /**

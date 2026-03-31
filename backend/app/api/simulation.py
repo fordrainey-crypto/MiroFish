@@ -451,7 +451,17 @@ def prepare_simulation():
                 "success": False,
                 "error": f"项目不存在: {state.project_id}"
             }), 404
-        
+
+        # Accept keys from request (keys are never persisted to disk)
+        if data.get('user_llm_api_key'):
+            project.user_llm_api_key = data['user_llm_api_key']
+        if data.get('user_zep_api_key'):
+            project.user_zep_api_key = data['user_zep_api_key']
+        if data.get('user_llm_model_name'):
+            project.user_llm_model_name = data['user_llm_model_name']
+        if data.get('user_llm_base_url'):
+            project.user_llm_base_url = data['user_llm_base_url']
+
         # 获取模拟需求
         simulation_requirement = project.simulation_requirement or ""
         if not simulation_requirement:
@@ -459,10 +469,10 @@ def prepare_simulation():
                 "success": False,
                 "error": "项目缺少模拟需求描述 (simulation_requirement)"
             }), 400
-        
+
         # 获取文档文本
         document_text = ProjectManager.get_extracted_text(state.project_id) or ""
-        
+
         entity_types_list = data.get('entity_types')
         use_llm_for_profiles = data.get('use_llm_for_profiles', True)
         parallel_profile_count = data.get('parallel_profile_count', 5)

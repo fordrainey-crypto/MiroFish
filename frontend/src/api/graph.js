@@ -24,11 +24,16 @@ export function generateOntology(formData) {
  * @returns {Promise}
  */
 export function buildGraph(data) {
+  const keys = {
+    user_llm_api_key: localStorage.getItem('mf_llm_key') || undefined,
+    user_zep_api_key: localStorage.getItem('mf_zep_key') || undefined,
+    user_llm_model_name: localStorage.getItem('mf_model') || undefined,
+  }
   return requestWithRetry(() =>
     service({
       url: '/api/graph/build',
       method: 'post',
-      data
+      data: { ...data, ...keys }
     })
   )
 }

@@ -13,7 +13,12 @@ export const createSimulation = (data) => {
  * @param {Object} data - { simulation_id, entity_types?, use_llm_for_profiles?, parallel_profile_count?, force_regenerate? }
  */
 export const prepareSimulation = (data) => {
-  return requestWithRetry(() => service.post('/api/simulation/prepare', data), 3, 1000)
+  const keys = {
+    user_llm_api_key: localStorage.getItem('mf_llm_key') || undefined,
+    user_zep_api_key: localStorage.getItem('mf_zep_key') || undefined,
+    user_llm_model_name: localStorage.getItem('mf_model') || undefined,
+  }
+  return requestWithRetry(() => service.post('/api/simulation/prepare', { ...data, ...keys }), 3, 1000)
 }
 
 /**

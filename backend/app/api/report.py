@@ -90,7 +90,17 @@ def generate_report():
                 "success": False,
                 "error": f"项目不存在: {state.project_id}"
             }), 404
-        
+
+        # Accept keys from request (keys are never persisted to disk)
+        if data.get('user_llm_api_key'):
+            project.user_llm_api_key = data['user_llm_api_key']
+        if data.get('user_zep_api_key'):
+            project.user_zep_api_key = data['user_zep_api_key']
+        if data.get('user_llm_model_name'):
+            project.user_llm_model_name = data['user_llm_model_name']
+        if data.get('user_llm_base_url'):
+            project.user_llm_base_url = data['user_llm_base_url']
+
         graph_id = state.graph_id or project.graph_id
         if not graph_id:
             return jsonify({
@@ -536,14 +546,22 @@ def _md_to_html(md: str) -> str:
 @report_bp.route('/<report_id>/export-html', methods=['GET'])
 def export_report_html(report_id: str):
     """
-    Export report as a self-contained HTML file for portfolio hosting.
-    Includes all styles inline — no backend dependency needed to view.
+    Export report as a self-contained HTML file.
+    Includes: full report text, interactive force-directed knowledge graph, agent timeline.
+    No backend needed to view — works fully offline.
     """
+    import json, re, html as htmllib
+    from flask import Response
+    from ..services.graph_builder import GraphBuilderService
+
     try:
         report = ReportManager.get_report(report_id)
         if not report:
             return jsonify({"success": False, "error": f"报告不存在: {report_id}"}), 404
 
+        report_dir = ReportManager._get_report_folder(report_id)
+
+        # --- Report markdown ---
         md_path = ReportManager._get_report_markdown_path(report_id)
         if os.path.exists(md_path):
             with open(md_path, 'r', encoding='utf-8') as f:
@@ -551,71 +569,328 @@ def export_report_html(report_id: str):
         else:
             md_content = report.markdown_content or ""
 
+        # --- Graph data: check cache first, then fetch from Zep ---
+        graph_data = {"nodes": [], "edges": []}
+        if report.graph_id:
+            snapshot_path = os.path.join(report_dir, "graph_snapshot.json")
+            if os.path.exists(snapshot_path):
+                try:
+                    with open(snapshot_path, 'r', encoding='utf-8') as f:
+                        graph_data = json.load(f)
+                except Exception:
+                    pass
+            else:
+                try:
+                    builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+                    graph_data = builder.get_graph_data(report.graph_id)
+                    with open(snapshot_path, 'w', encoding='utf-8') as f:
+                        json.dump(graph_data, f)
+                except Exception as e:
+                    logger.warning(f"Could not fetch graph data for export: {e}")
+
+        # --- Agent log timeline ---
+        agent_logs = ReportManager.get_agent_log_stream(report_id)
+        agent_logs = agent_logs[:500]
+
+        # --- Render ---
         html_body = _md_to_html(md_content)
         title = report.simulation_requirement or report_id
         completed_at = report.completed_at or report.created_at or ""
         demo_url = Config.DEMO_URL
+
+        def _escape(s):
+            return htmllib.escape(str(s)) if s else ''
+
+        # Build timeline HTML
+        type_colors = {
+            'report_start': '#6366f1', 'planning_start': '#8b5cf6',
+            'planning_complete': '#7c3aed', 'section_start': '#0ea5e9',
+            'tool_call': '#f59e0b', 'tool_result': '#10b981',
+            'llm_response': '#6366f1', 'section_complete': '#22c55e',
+            'report_complete': '#16a34a', 'error': '#ef4444',
+        }
+        timeline_rows = []
+        for entry in agent_logs:
+            etype = entry.get('action') or entry.get('type', 'unknown')
+            ts = entry.get('timestamp', '')
+            if ts and 'T' in ts:
+                ts = ts.split('T')[1][:8]
+            details = entry.get('details', {})
+            summary = ''
+            if etype == 'tool_call':
+                summary = details.get('tool_name', '')
+                params = details.get('parameters', {})
+                if params:
+                    first_val = next(iter(params.values()), '')
+                    summary += f': {str(first_val)[:80]}'
+            elif etype in ('section_start', 'section_complete'):
+                summary = entry.get('section_title') or details.get('message', '')
+            elif etype == 'tool_result':
+                summary = str(details.get('result', ''))[:120]
+            elif etype == 'llm_response':
+                summary = str(details.get('response', ''))[:120]
+            else:
+                summary = details.get('message', '')
+            color = type_colors.get(etype, '#6b7280')
+            timeline_rows.append(
+                f'<div class="tl-row">'
+                f'<span class="tl-ts">{_escape(ts)}</span>'
+                f'<span class="tl-badge" style="background:{color}">{_escape(etype)}</span>'
+                f'<span class="tl-txt">{_escape(summary[:120])}</span>'
+                f'</div>'
+            )
+        timeline_html = '\n'.join(timeline_rows) if timeline_rows else '<p style="color:#999;font-size:13px;">No agent log available.</p>'
+
+        graph_json = json.dumps(graph_data, ensure_ascii=False)
+        node_count = len(graph_data.get('nodes', []))
+        edge_count = len(graph_data.get('edges', []))
 
         html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{title[:80]} — MiroFish Report</title>
+<title>{_escape(title[:80])} — MiroFish Report</title>
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
-body{{background:#0d0d14;color:#c9d1d9;font-family:'Segoe UI',system-ui,sans-serif;line-height:1.7;padding:0}}
-header{{background:#161622;border-bottom:1px solid #30363d;padding:32px 48px;max-width:900px;margin:0 auto}}
-header h1{{font-size:13px;text-transform:uppercase;letter-spacing:3px;color:#58a6ff;margin-bottom:12px}}
-header .topic{{font-size:22px;font-weight:600;color:#e6edf3;margin-bottom:8px}}
-header .meta{{font-size:13px;color:#8b949e;margin-bottom:20px}}
-.cta{{display:inline-block;background:#238636;color:#fff;text-decoration:none;padding:10px 20px;border-radius:6px;font-size:14px;font-weight:500}}
-.cta:hover{{background:#2ea043}}
-main{{max-width:900px;margin:0 auto;padding:40px 48px}}
+body{{background:#0d0d14;color:#c9d1d9;font-family:'Segoe UI',system-ui,sans-serif;line-height:1.7}}
+.page-wrap{{max-width:960px;margin:0 auto;padding:0 32px}}
+header{{background:#161622;border-bottom:1px solid #30363d;padding:32px 0;margin-bottom:40px}}
+header .page-wrap h1{{font-size:13px;text-transform:uppercase;letter-spacing:3px;color:#58a6ff;margin-bottom:10px}}
+.topic{{font-size:22px;font-weight:600;color:#e6edf3;margin-bottom:6px}}
+.meta{{font-size:13px;color:#8b949e;margin-bottom:18px}}
+.cta{{display:inline-block;background:#238636;color:#fff;text-decoration:none;padding:9px 18px;border-radius:6px;font-size:13px;font-weight:500}}
+section{{margin-bottom:48px}}
 h2{{font-size:20px;font-weight:600;color:#e6edf3;margin:36px 0 12px;border-bottom:1px solid #21262d;padding-bottom:8px}}
 h3{{font-size:17px;font-weight:600;color:#c9d1d9;margin:24px 0 8px}}
 h4,h5{{font-size:15px;color:#8b949e;margin:18px 0 6px}}
 p{{margin-bottom:12px;color:#c9d1d9}}
-ul{{margin:8px 0 16px 24px}}
-li{{margin-bottom:4px}}
-strong{{color:#e6edf3;font-weight:600}}
-em{{color:#a5d6ff;font-style:italic}}
+ul{{margin:8px 0 16px 24px}}li{{margin-bottom:4px}}
+strong{{color:#e6edf3;font-weight:600}}em{{color:#a5d6ff;font-style:italic}}
 blockquote{{border-left:3px solid #388bfd;padding:8px 16px;margin:16px 0;background:#161b22;color:#8b949e;border-radius:0 4px 4px 0}}
 pre{{background:#161b22;border:1px solid #30363d;border-radius:6px;padding:16px;overflow-x:auto;margin:16px 0}}
-code{{font-family:'JetBrains Mono','Fira Code',monospace;font-size:13px;color:#e6edf3}}
+code{{font-family:monospace;font-size:13px;color:#e6edf3}}
 hr{{border:none;border-top:1px solid #21262d;margin:32px 0}}
 br{{display:block;height:6px}}
-footer{{max-width:900px;margin:0 auto;padding:24px 48px;border-top:1px solid #21262d;font-size:12px;color:#484f58}}
+.section-label{{font-size:12px;text-transform:uppercase;letter-spacing:2px;color:#58a6ff;margin-bottom:12px}}
+#graph-canvas{{width:100%;height:480px;border-radius:8px;border:1px solid #30363d;background:#0d0d18;cursor:grab;display:block}}
+#graph-canvas:active{{cursor:grabbing}}
+.graph-legend{{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}}
+.legend-item{{display:flex;align-items:center;gap:5px;font-size:12px;color:#8b949e}}
+.legend-dot{{width:10px;height:10px;border-radius:50%}}
+details.tl-details{{background:#161622;border:1px solid #30363d;border-radius:8px;overflow:hidden}}
+details.tl-details summary{{padding:14px 18px;cursor:pointer;font-size:13px;font-weight:600;color:#c9d1d9;list-style:none;display:flex;align-items:center;gap:8px}}
+details.tl-details summary::-webkit-details-marker{{display:none}}
+.tl-inner{{padding:0 18px 16px;max-height:400px;overflow-y:auto}}
+.tl-row{{display:flex;align-items:flex-start;gap:10px;padding:5px 0;border-bottom:1px solid #21262d;font-size:12px}}
+.tl-ts{{color:#484f58;white-space:nowrap;padding-top:2px;width:60px;flex-shrink:0}}
+.tl-badge{{border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600;color:#fff;white-space:nowrap;flex-shrink:0}}
+.tl-txt{{color:#8b949e;word-break:break-word}}
+footer{{border-top:1px solid #21262d;padding:24px 0;font-size:12px;color:#484f58;margin-top:32px}}
 footer a{{color:#58a6ff;text-decoration:none}}
 </style>
 </head>
 <body>
 <header>
-  <h1>MiroFish — AI Social Simulation Report</h1>
-  <div class="topic">{title}</div>
-  <div class="meta">Generated {completed_at}</div>
-  <a class="cta" href="{demo_url}">&#9654; Run Your Own Simulation</a>
+  <div class="page-wrap">
+    <h1>MiroFish — AI Social Simulation Report</h1>
+    <div class="topic">{_escape(title)}</div>
+    <div class="meta">Generated {_escape(completed_at)}</div>
+    <a class="cta" href="{_escape(demo_url)}">&#9654; Run Your Own Simulation</a>
+  </div>
 </header>
-<main>
-{html_body}
-</main>
-<footer>
+<div class="page-wrap">
+
+  <section>
+    <div class="section-label">Report</div>
+    {html_body}
+  </section>
+
+  <section>
+    <div class="section-label">Knowledge Graph — {node_count} nodes · {edge_count} edges</div>
+    <canvas id="graph-canvas"></canvas>
+    <div class="graph-legend" id="graph-legend"></div>
+  </section>
+
+  <section>
+    <details class="tl-details">
+      <summary>&#9656; Agent Workflow Log ({len(agent_logs)} events)</summary>
+      <div class="tl-inner">
+        {timeline_html}
+      </div>
+    </details>
+  </section>
+
+</div>
+<footer class="page-wrap">
   <p>Built with <a href="https://github.com/fordrainey/MiroFish">MiroFish</a> — AI-powered social simulation &amp; prediction.</p>
 </footer>
+
+<script id="graph-data" type="application/json">
+{graph_json}
+</script>
+<script>
+(function(){{
+  var raw = document.getElementById('graph-data');
+  if (!raw) return;
+  var gd;
+  try {{ gd = JSON.parse(raw.textContent); }} catch(e) {{ return; }}
+  var nodes = (gd.nodes || []).map(function(n) {{
+    return {{ id: n.uuid, label: n.name || n.uuid, type: (n.labels||[])[0]||'Entity', summary: n.summary||'' }};
+  }});
+  var edges = (gd.edges || []).map(function(e) {{
+    return {{ source: e.source_node_uuid, target: e.target_node_uuid, label: e.name||'' }};
+  }});
+  if (!nodes.length) return;
+
+  // Assign colors by type
+  var TYPE_COLORS = {{}};
+  var PALETTE = ['#58a6ff','#f59e0b','#10b981','#a78bfa','#f472b6','#34d399','#fb923c','#e879f9'];
+  var ci = 0;
+  nodes.forEach(function(n) {{
+    if (!TYPE_COLORS[n.type]) {{ TYPE_COLORS[n.type] = PALETTE[ci % PALETTE.length]; ci++; }}
+    n.color = TYPE_COLORS[n.type];
+  }});
+
+  // Legend
+  var legend = document.getElementById('graph-legend');
+  Object.keys(TYPE_COLORS).forEach(function(t) {{
+    var item = document.createElement('div'); item.className = 'legend-item';
+    var dot = document.createElement('div'); dot.className = 'legend-dot'; dot.style.background = TYPE_COLORS[t];
+    item.appendChild(dot); item.appendChild(document.createTextNode(t));
+    legend.appendChild(item);
+  }});
+
+  var canvas = document.getElementById('graph-canvas');
+  var ctx = canvas.getContext('2d');
+  var W, H;
+
+  function resize() {{
+    W = canvas.offsetWidth; H = canvas.offsetHeight;
+    canvas.width = W * devicePixelRatio; canvas.height = H * devicePixelRatio;
+    ctx.scale(devicePixelRatio, devicePixelRatio);
+  }}
+  resize();
+  window.addEventListener('resize', function() {{ resize(); draw(); }});
+
+  // Init positions
+  var nodeMap = {{}};
+  nodes.forEach(function(n, i) {{
+    var angle = (i / nodes.length) * Math.PI * 2;
+    var r = Math.min(W, H) * 0.35;
+    n.x = W/2 + r * Math.cos(angle); n.y = H/2 + r * Math.sin(angle);
+    n.vx = 0; n.vy = 0;
+    nodeMap[n.id] = n;
+  }});
+
+  // Force simulation
+  var REPULSION = 3000, SPRING = 0.03, DAMPING = 0.85, GRAVITY = 0.01;
+  var simRunning = true;
+  var ticks = 0;
+
+  function simulate() {{
+    if (!simRunning) return;
+    // Repulsion
+    for (var i = 0; i < nodes.length; i++) {{
+      for (var j = i+1; j < nodes.length; j++) {{
+        var dx = nodes[j].x - nodes[i].x, dy = nodes[j].y - nodes[i].y;
+        var dist = Math.sqrt(dx*dx+dy*dy) || 1;
+        var force = REPULSION / (dist*dist);
+        nodes[i].vx -= force*dx/dist; nodes[i].vy -= force*dy/dist;
+        nodes[j].vx += force*dx/dist; nodes[j].vy += force*dy/dist;
+      }}
+    }}
+    // Spring (edges)
+    edges.forEach(function(e) {{
+      var s = nodeMap[e.source], t = nodeMap[e.target];
+      if (!s || !t) return;
+      var dx = t.x-s.x, dy = t.y-s.y, dist = Math.sqrt(dx*dx+dy*dy)||1;
+      var f = (dist - 120) * SPRING;
+      s.vx += f*dx/dist; s.vy += f*dy/dist;
+      t.vx -= f*dx/dist; t.vy -= f*dy/dist;
+    }});
+    // Gravity to center + integrate
+    nodes.forEach(function(n) {{
+      if (n.fixed) return;
+      n.vx += (W/2 - n.x) * GRAVITY; n.vy += (H/2 - n.y) * GRAVITY;
+      n.vx *= DAMPING; n.vy *= DAMPING;
+      n.x += n.vx; n.y += n.vy;
+    }});
+    ticks++;
+    if (ticks > 300) simRunning = false;
+  }}
+
+  // Tooltip state
+  var tooltip = null;
+
+  function draw() {{
+    ctx.clearRect(0, 0, W, H);
+    // Edges
+    edges.forEach(function(e) {{
+      var s = nodeMap[e.source], t = nodeMap[e.target];
+      if (!s || !t) return;
+      ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(t.x, t.y);
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1; ctx.stroke();
+    }});
+    // Nodes
+    nodes.forEach(function(n) {{
+      ctx.beginPath(); ctx.arc(n.x, n.y, 8, 0, Math.PI*2);
+      ctx.fillStyle = n.color; ctx.fill();
+      ctx.fillStyle = '#e6edf3'; ctx.font = '11px system-ui,sans-serif';
+      ctx.textAlign = 'center'; ctx.fillText(n.label.slice(0,18), n.x, n.y+20);
+    }});
+    // Tooltip
+    if (tooltip) {{
+      ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.strokeStyle = '#30363d';
+      var tw = Math.min(tooltip.text.length*6+20, 260), th = 28;
+      var tx = Math.min(tooltip.x+12, W-tw-4), ty = Math.max(tooltip.y-34, 4);
+      ctx.beginPath(); ctx.roundRect(tx, ty, tw, th, 4); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#e6edf3'; ctx.font = '12px system-ui,sans-serif';
+      ctx.textAlign = 'left'; ctx.fillText(tooltip.text.slice(0,40), tx+10, ty+18);
+    }}
+  }}
+
+  function loop() {{ simulate(); draw(); requestAnimationFrame(loop); }}
+  requestAnimationFrame(loop);
+
+  // Drag
+  var dragging = null, offsetX = 0, offsetY = 0;
+  function nodeAt(x, y) {{
+    for (var i = nodes.length-1; i >= 0; i--) {{
+      var n = nodes[i], dx = n.x-x, dy = n.y-y;
+      if (dx*dx+dy*dy < 100) return n;
+    }}
+    return null;
+  }}
+  canvas.addEventListener('mousedown', function(e) {{
+    var r = canvas.getBoundingClientRect();
+    var n = nodeAt(e.clientX-r.left, e.clientY-r.top);
+    if (n) {{ dragging = n; n.fixed = true; offsetX = n.x-(e.clientX-r.left); offsetY = n.y-(e.clientY-r.top); simRunning = true; ticks = 0; }}
+  }});
+  canvas.addEventListener('mousemove', function(e) {{
+    var r = canvas.getBoundingClientRect();
+    var mx = e.clientX-r.left, my = e.clientY-r.top;
+    if (dragging) {{ dragging.x = mx+offsetX; dragging.y = my+offsetY; return; }}
+    var n = nodeAt(mx, my);
+    tooltip = n ? {{ x: mx, y: my, text: n.summary || n.label }} : null;
+  }});
+  canvas.addEventListener('mouseup', function() {{ if (dragging) {{ dragging.fixed = false; dragging = null; }} }});
+  canvas.addEventListener('mouseleave', function() {{ tooltip = null; if (dragging) {{ dragging.fixed = false; dragging = null; }} }});
+}})();
+</script>
 </body>
 </html>"""
 
-        slug = title[:30].replace(' ', '-').lower()
-        from flask import Response
+        slug = re.sub(r'[^a-z0-9-]', '', title[:30].replace(' ', '-').lower())
         return Response(
             html,
             mimetype='text/html',
-            headers={'Content-Disposition': f'attachment; filename="mirofish-{slug}.html"'}
+            headers={{'Content-Disposition': f'attachment; filename="mirofish-{{slug}}.html"'}}
         )
 
     except Exception as e:
         logger.error(f"导出HTML报告失败: {str(e)}")
-        return jsonify({"success": False, "error": str(e), "traceback": traceback.format_exc()}), 500
+        return jsonify({{"success": False, "error": str(e), "traceback": traceback.format_exc()}}), 500
 
 
 @report_bp.route('/<report_id>/view', methods=['GET'])
@@ -939,12 +1214,34 @@ def chat_with_report_agent():
             }), 400
         
         simulation_requirement = project.simulation_requirement or ""
-        
+
+        # Accept keys from request (keys are never persisted to disk)
+        if data.get('user_llm_api_key'):
+            project.user_llm_api_key = data['user_llm_api_key']
+        if data.get('user_zep_api_key'):
+            project.user_zep_api_key = data['user_zep_api_key']
+        if data.get('user_llm_model_name'):
+            project.user_llm_model_name = data['user_llm_model_name']
+        if data.get('user_llm_base_url'):
+            project.user_llm_base_url = data['user_llm_base_url']
+
+        # Resolve keys: user-provided → server fallback
+        from ..utils.llm_client import LLMClient
+        from ..services.zep_tools import ZepToolsService
+        _zep_key = project.user_zep_api_key or (None if Config.REQUIRE_USER_KEYS else Config.ZEP_API_KEY)
+        _llm_key = project.user_llm_api_key or (None if Config.REQUIRE_USER_KEYS else Config.LLM_API_KEY)
+        _llm_model = project.user_llm_model_name or Config.LLM_MODEL_NAME
+        _llm_base_url = project.user_llm_base_url or (None if Config.REQUIRE_USER_KEYS else Config.LLM_BASE_URL)
+        _llm_client = LLMClient(api_key=_llm_key, base_url=_llm_base_url, model=_llm_model)
+        _zep_tools = ZepToolsService(api_key=_zep_key, llm_client=_llm_client)
+
         # 创建Agent并进行对话
         agent = ReportAgent(
             graph_id=graph_id,
             simulation_id=simulation_id,
-            simulation_requirement=simulation_requirement
+            simulation_requirement=simulation_requirement,
+            llm_client=_llm_client,
+            zep_tools=_zep_tools
         )
         
         result = agent.chat(message=message, chat_history=chat_history)

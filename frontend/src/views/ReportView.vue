@@ -38,25 +38,13 @@
       <span class="banner-icon">✓</span>
       <span class="banner-text">Your report is ready!</span>
       <div class="banner-actions">
-        <button class="banner-btn secondary" @click="shareReport">
-          Share Report
-        </button>
-        <button class="banner-btn secondary" @click="runSimplify" :disabled="simplifying">
-          {{ simplifying ? 'Simplifying…' : showSimplified ? 'Re-summarize' : 'Plain English Summary' }}
+        <button class="banner-btn secondary" @click="exportHtml">
+          Export Report
         </button>
         <button class="banner-btn" @click="goToInteraction">
           Chat with Agents →
         </button>
       </div>
-    </div>
-
-    <!-- Plain English Summary Panel -->
-    <div v-if="showSimplified && simplifiedText" class="simplified-panel">
-      <div class="simplified-header">
-        <span class="simplified-title">Plain English Summary</span>
-        <button class="simplified-close" @click="showSimplified = false">✕</button>
-      </div>
-      <div class="simplified-body" v-html="simplifiedText.replace(/\n/g, '<br>')"></div>
     </div>
 
     <!-- Main Content Area -->
@@ -94,7 +82,7 @@ import GraphPanel from '../components/GraphPanel.vue'
 import Step4Report from '../components/Step4Report.vue'
 import { getProject, getGraphData } from '../api/graph'
 import { getSimulation } from '../api/simulation'
-import { getReport, simplifyReport } from '../api/report'
+import { getReport } from '../api/report'
 
 const route = useRoute()
 const router = useRouter()
@@ -115,9 +103,6 @@ const graphData = ref(null)
 const graphLoading = ref(false)
 const systemLogs = ref([])
 const currentStatus = ref('processing') // processing | completed | error
-const simplifiedText = ref(null)
-const simplifying = ref(false)
-const showSimplified = ref(false)
 
 // --- Computed Layout Styles ---
 const leftPanelStyle = computed(() => {
@@ -166,26 +151,6 @@ const exportHtml = () => {
 
 const shareReport = () => {
   window.open(`/api/report/${currentReportId.value}/view`, '_blank')
-}
-
-const runSimplify = async () => {
-  if (simplifying.value) return
-  simplifying.value = true
-  addLog('Generating plain English summary...')
-  try {
-    const res = await simplifyReport(currentReportId.value)
-    if (res.success) {
-      simplifiedText.value = res.data.simplified
-      showSimplified.value = true
-      addLog('Plain English summary ready')
-    } else {
-      addLog(`Simplify failed: ${res.data?.error || 'Unknown error'}`)
-    }
-  } catch (err) {
-    addLog(`Simplify error: ${err.message}`)
-  } finally {
-    simplifying.value = false
-  }
 }
 
 // --- Layout Methods ---

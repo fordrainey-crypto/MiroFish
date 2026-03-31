@@ -76,11 +76,8 @@ class Project:
             "simulation_requirement": self.simulation_requirement,
             "chunk_size": self.chunk_size,
             "chunk_overlap": self.chunk_overlap,
-            # Store actual key values on disk (project.json is local/server-side only).
-            # API responses that expose project data should mask these — see graph.py list endpoint.
-            "user_llm_api_key": self.user_llm_api_key,
-            "user_zep_api_key": self.user_zep_api_key,
-            "user_llm_model_name": self.user_llm_model_name,
+            # Keys are intentionally NOT persisted to disk — they are passed per-request
+            # from the frontend (localStorage) and held in-memory only.
             "error": self.error
         }
     
@@ -106,9 +103,10 @@ class Project:
             simulation_requirement=data.get('simulation_requirement'),
             chunk_size=data.get('chunk_size', 500),
             chunk_overlap=data.get('chunk_overlap', 50),
-            user_llm_api_key=data.get('user_llm_api_key'),
-            user_zep_api_key=data.get('user_zep_api_key'),
-            user_llm_model_name=data.get('user_llm_model_name'),
+            # Keys are not persisted — always None when loaded from disk
+            user_llm_api_key=None,
+            user_zep_api_key=None,
+            user_llm_model_name=None,
             error=data.get('error')
         )
 
