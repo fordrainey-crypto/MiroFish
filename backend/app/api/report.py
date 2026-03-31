@@ -552,7 +552,6 @@ def export_report_html(report_id: str):
     """
     import json, re, html as htmllib
     from flask import Response
-    from ..services.graph_builder import GraphBuilderService
 
     try:
         report = ReportManager.get_report(report_id)
@@ -569,7 +568,7 @@ def export_report_html(report_id: str):
         else:
             md_content = report.markdown_content or ""
 
-        # --- Graph data: check cache first, then fetch from Zep ---
+        # --- Graph data: use cached snapshot only (written at report generation time) ---
         graph_data = {"nodes": [], "edges": []}
         if report.graph_id:
             snapshot_path = os.path.join(report_dir, "graph_snapshot.json")
@@ -580,13 +579,7 @@ def export_report_html(report_id: str):
                 except Exception:
                     pass
             else:
-                try:
-                    builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
-                    graph_data = builder.get_graph_data(report.graph_id)
-                    with open(snapshot_path, 'w', encoding='utf-8') as f:
-                        json.dump(graph_data, f)
-                except Exception as e:
-                    logger.warning(f"Could not fetch graph data for export: {e}")
+                logger.info(f"No graph snapshot found for {report_id} — graph will be empty in export")
 
         # --- Agent log timeline ---
         agent_logs = ReportManager.get_agent_log_stream(report_id)

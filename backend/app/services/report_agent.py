@@ -1852,10 +1852,27 @@ class ReportAgent:
                 report_id, "completed", 100, "报告生成完成",
                 completed_sections=completed_section_titles
             )
-            
+
+            # Cache graph snapshot now while we still have the user's Zep key,
+            # so export-html never needs to call Zep using the server key.
+            try:
+                import json as _json
+                from .graph_builder import GraphBuilderService as _GBS
+                _snapshot_path = os.path.join(
+                    ReportManager._get_report_folder(report_id), "graph_snapshot.json"
+                )
+                if not os.path.exists(_snapshot_path):
+                    _builder = _GBS(api_key=self.zep_tools.api_key)
+                    _gdata = _builder.get_graph_data(self.graph_id)
+                    with open(_snapshot_path, 'w', encoding='utf-8') as _f:
+                        _json.dump(_gdata, _f)
+                    logger.info(f"Graph snapshot cached for export: {report_id}")
+            except Exception as _e:
+                logger.warning(f"Could not cache graph snapshot (export will try again): {_e}")
+
             if progress_callback:
                 progress_callback("completed", 100, "报告生成完成")
-            
+
             logger.info(f"报告生成完成: {report_id}")
             
             # 关闭控制台日志记录器
