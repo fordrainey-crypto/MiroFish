@@ -587,7 +587,12 @@ def export_report_html(report_id: str):
 
         # --- Render ---
         html_body = _md_to_html(md_content)
-        title = report.simulation_requirement or report_id
+        _raw_req = report.simulation_requirement or report_id
+        # Strip the system instructions appended in graph.py before display
+        scenario_question = _raw_req.split('\n\nPlease write your final report')[0].strip()
+        # Use the first markdown heading as the display title; fall back to scenario question
+        _title_match = re.search(r'^#{1,3}\s+(.+)', md_content, re.MULTILINE)
+        title = _title_match.group(1).strip() if _title_match else scenario_question
         completed_at = report.completed_at or report.created_at or ""
         demo_url = Config.DEMO_URL
 
@@ -643,80 +648,141 @@ def export_report_html(report_id: str):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{_escape(title[:80])} — MiroFish Report</title>
+<title>MiroFish Simulation Report — {_escape(title[:60])}</title>
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap');
 *{{box-sizing:border-box;margin:0;padding:0}}
-body{{background:#0d0d14;color:#c9d1d9;font-family:'Segoe UI',system-ui,sans-serif;line-height:1.7}}
-.page-wrap{{max-width:960px;margin:0 auto;padding:0 32px}}
-header{{background:#161622;border-bottom:1px solid #30363d;padding:32px 0;margin-bottom:40px}}
-header .page-wrap h1{{font-size:13px;text-transform:uppercase;letter-spacing:3px;color:#58a6ff;margin-bottom:10px}}
-.topic{{font-size:22px;font-weight:600;color:#e6edf3;margin-bottom:6px}}
-.meta{{font-size:13px;color:#8b949e;margin-bottom:18px}}
-.cta{{display:inline-block;background:#238636;color:#fff;text-decoration:none;padding:9px 18px;border-radius:6px;font-size:13px;font-weight:500}}
-section{{margin-bottom:48px}}
-h2{{font-size:20px;font-weight:600;color:#e6edf3;margin:36px 0 12px;border-bottom:1px solid #21262d;padding-bottom:8px}}
-h3{{font-size:17px;font-weight:600;color:#c9d1d9;margin:24px 0 8px}}
-h4,h5{{font-size:15px;color:#8b949e;margin:18px 0 6px}}
-p{{margin-bottom:12px;color:#c9d1d9}}
-ul{{margin:8px 0 16px 24px}}li{{margin-bottom:4px}}
-strong{{color:#e6edf3;font-weight:600}}em{{color:#a5d6ff;font-style:italic}}
-blockquote{{border-left:3px solid #388bfd;padding:8px 16px;margin:16px 0;background:#161b22;color:#8b949e;border-radius:0 4px 4px 0}}
-pre{{background:#161b22;border:1px solid #30363d;border-radius:6px;padding:16px;overflow-x:auto;margin:16px 0}}
-code{{font-family:monospace;font-size:13px;color:#e6edf3}}
-hr{{border:none;border-top:1px solid #21262d;margin:32px 0}}
-br{{display:block;height:6px}}
-.section-label{{font-size:12px;text-transform:uppercase;letter-spacing:2px;color:#58a6ff;margin-bottom:12px}}
-#graph-canvas{{width:100%;height:480px;border-radius:8px;border:1px solid #30363d;background:#0d0d18;cursor:grab;display:block}}
+body{{background:#F7F8FA;color:#1a1a2e;font-family:'Inter',system-ui,sans-serif;line-height:1.75;-webkit-font-smoothing:antialiased}}
+.page-wrap{{max-width:900px;margin:0 auto;padding:0 24px}}
+
+/* Header */
+header{{background:#fff;border-bottom:1px solid #EAEAEA;padding:0}}
+.header-inner{{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;max-width:900px;margin:0 auto}}
+.brand{{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:14px;letter-spacing:1.5px;color:#000;text-decoration:none}}
+.brand span{{color:#1A936F}}
+.cta{{display:inline-block;background:#1A936F;color:#fff;text-decoration:none;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;letter-spacing:0.2px}}
+.cta:hover{{background:#148559}}
+
+/* Title card */
+.title-card{{background:linear-gradient(135deg,#0d1f17 0%,#0f2d20 60%,#133828 100%);padding:56px 0 48px;position:relative;overflow:hidden}}
+.title-card::before{{content:'';position:absolute;inset:0;background:url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%231A936F' fill-opacity='0.04'%3E%3Ccircle cx='30' cy='30' r='2'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");pointer-events:none}}
+.tc-inner{{position:relative;max-width:900px;margin:0 auto;padding:0 24px}}
+.tc-label{{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:3px;color:#4ade80;opacity:0.8;margin-bottom:20px}}
+.tc-title{{font-size:30px;font-weight:700;color:#fff;line-height:1.4;max-width:760px;margin-bottom:14px}}
+.tc-scenario{{font-size:14px;color:rgba(255,255,255,0.45);line-height:1.5;max-width:680px;margin-bottom:24px;font-style:italic}}
+.tc-meta{{display:flex;align-items:center;gap:16px;flex-wrap:wrap}}
+.tc-badge{{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);border-radius:20px;padding:5px 14px;font-size:12px;color:rgba(255,255,255,0.6);font-weight:500}}
+.tc-badge-green{{background:rgba(26,147,111,0.2);border-color:rgba(26,147,111,0.4);color:#4ade80}}
+
+/* Main content */
+.content{{padding:40px 0 64px}}
+.card{{background:#fff;border:1px solid #EAEAEA;border-radius:10px;padding:32px 36px;margin-bottom:28px;box-shadow:0 1px 4px rgba(0,0,0,0.04)}}
+.card-label{{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:2.5px;color:#1A936F;margin-bottom:20px}}
+.card-label-dark{{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:2.5px;color:#888;margin-bottom:16px}}
+
+/* Typography */
+h2{{font-size:19px;font-weight:700;color:#0d0d14;margin:32px 0 10px;padding-bottom:8px;border-bottom:1px solid #F0F0F0}}
+h2:first-child{{margin-top:0}}
+h3{{font-size:16px;font-weight:600;color:#1a1a2e;margin:22px 0 8px}}
+h4,h5{{font-size:14px;font-weight:600;color:#444;margin:16px 0 6px}}
+p{{margin-bottom:14px;color:#333;font-size:15px}}
+ul{{margin:6px 0 16px 22px}}
+li{{margin-bottom:5px;font-size:15px;color:#333}}
+strong{{color:#0d0d14;font-weight:600}}
+em{{color:#1A936F;font-style:normal;font-weight:500}}
+blockquote{{border-left:3px solid #1A936F;padding:10px 18px;margin:18px 0;background:#F0FAF5;color:#065F46;border-radius:0 6px 6px 0;font-size:14px}}
+pre{{background:#F5F5F5;border:1px solid #E8E8E8;border-radius:6px;padding:16px;overflow-x:auto;margin:16px 0}}
+code{{font-family:'JetBrains Mono',monospace;font-size:13px;color:#1a1a2e}}
+hr{{border:none;border-top:1px solid #F0F0F0;margin:28px 0}}
+br{{display:block;height:4px}}
+
+/* Graph */
+.graph-wrap{{background:#FAFAFA;border:1px solid #EAEAEA;border-radius:8px;overflow:hidden}}
+#graph-canvas{{width:100%;height:500px;cursor:grab;display:block;background:radial-gradient(ellipse at center, #f0faf5 0%, #FAFAFA 100%)}}
 #graph-canvas:active{{cursor:grabbing}}
-.graph-legend{{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}}
-.legend-item{{display:flex;align-items:center;gap:5px;font-size:12px;color:#8b949e}}
-.legend-dot{{width:10px;height:10px;border-radius:50%}}
-details.tl-details{{background:#161622;border:1px solid #30363d;border-radius:8px;overflow:hidden}}
-details.tl-details summary{{padding:14px 18px;cursor:pointer;font-size:13px;font-weight:600;color:#c9d1d9;list-style:none;display:flex;align-items:center;gap:8px}}
+.graph-footer{{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-top:1px solid #EAEAEA;background:#fff}}
+.graph-stat{{font-size:12px;color:#888;font-family:'JetBrains Mono',monospace}}
+.graph-legend{{display:flex;flex-wrap:wrap;gap:10px}}
+.legend-item{{display:flex;align-items:center;gap:5px;font-size:11px;color:#666;font-weight:500}}
+.legend-dot{{width:8px;height:8px;border-radius:50%;flex-shrink:0}}
+
+/* Agent log */
+details.tl-details{{border:1px solid #EAEAEA;border-radius:8px;overflow:hidden;background:#fff}}
+details.tl-details summary{{padding:14px 20px;cursor:pointer;font-size:13px;font-weight:600;color:#444;list-style:none;display:flex;align-items:center;gap:8px;user-select:none}}
 details.tl-details summary::-webkit-details-marker{{display:none}}
-.tl-inner{{padding:0 18px 16px;max-height:400px;overflow-y:auto}}
-.tl-row{{display:flex;align-items:flex-start;gap:10px;padding:5px 0;border-bottom:1px solid #21262d;font-size:12px}}
-.tl-ts{{color:#484f58;white-space:nowrap;padding-top:2px;width:60px;flex-shrink:0}}
-.tl-badge{{border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600;color:#fff;white-space:nowrap;flex-shrink:0}}
-.tl-txt{{color:#8b949e;word-break:break-word}}
-footer{{border-top:1px solid #21262d;padding:24px 0;font-size:12px;color:#484f58;margin-top:32px}}
-footer a{{color:#58a6ff;text-decoration:none}}
+details.tl-details summary::before{{content:'▶';font-size:10px;color:#888;transition:transform 0.2s}}
+details[open].tl-details summary::before{{transform:rotate(90deg)}}
+.tl-inner{{border-top:1px solid #EAEAEA;max-height:360px;overflow-y:auto}}
+.tl-row{{display:flex;align-items:flex-start;gap:10px;padding:6px 20px;border-bottom:1px solid #F5F5F5;font-size:12px}}
+.tl-row:last-child{{border-bottom:none}}
+.tl-ts{{color:#aaa;white-space:nowrap;padding-top:2px;width:64px;flex-shrink:0;font-family:'JetBrains Mono',monospace;font-size:11px}}
+.tl-badge{{border-radius:4px;padding:2px 7px;font-size:10px;font-weight:700;color:#fff;white-space:nowrap;flex-shrink:0;letter-spacing:0.3px}}
+.tl-txt{{color:#555;word-break:break-word;line-height:1.5}}
+
+/* Footer */
+footer{{border-top:1px solid #EAEAEA;padding:24px 0;margin-top:8px}}
+.footer-inner{{max-width:900px;margin:0 auto;padding:0 24px;display:flex;align-items:center;justify-content:space-between}}
+.footer-brand{{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;color:#999}}
+.footer-link{{font-size:12px;color:#888}}
+.footer-link a{{color:#1A936F;text-decoration:none}}
 </style>
 </head>
 <body>
+
 <header>
-  <div class="page-wrap">
-    <h1>MiroFish — AI Social Simulation Report</h1>
-    <div class="topic">{_escape(title)}</div>
-    <div class="meta">Generated {_escape(completed_at)}</div>
-    <a class="cta" href="{_escape(demo_url)}">&#9654; Run Your Own Simulation</a>
+  <div class="header-inner">
+    <a class="brand" href="{_escape(demo_url)}">MIRO<span>FISH</span></a>
+    <a class="cta" href="{_escape(demo_url)}">&#9654;&nbsp; Run Your Own Simulation</a>
   </div>
 </header>
-<div class="page-wrap">
 
-  <section>
-    <div class="section-label">Report</div>
-    {html_body}
-  </section>
+<div class="title-card">
+  <div class="tc-inner">
+    <div class="tc-label">AI Social Simulation Report</div>
+    <div class="tc-title">{_escape(title)}</div>
+    <div class="tc-scenario">{_escape(scenario_question)}</div>
+    <div class="tc-meta">
+      <span class="tc-badge tc-badge-green">&#10003; Completed</span>
+      <span class="tc-badge">Generated {_escape(completed_at[:10] if completed_at else '')}</span>
+      <span class="tc-badge">{node_count} nodes &middot; {edge_count} edges</span>
+    </div>
+  </div>
+</div>
 
-  <section>
-    <div class="section-label">Knowledge Graph — {node_count} nodes · {edge_count} edges</div>
-    <canvas id="graph-canvas"></canvas>
-    <div class="graph-legend" id="graph-legend"></div>
-  </section>
+<div class="content">
+  <div class="page-wrap">
 
-  <section>
+    <div class="card">
+      <div class="card-label">Report</div>
+      {html_body}
+    </div>
+
+    <div class="card">
+      <div class="card-label">Knowledge Graph</div>
+      <div class="graph-wrap">
+        <canvas id="graph-canvas"></canvas>
+        <div class="graph-footer">
+          <span class="graph-stat">{node_count} nodes &middot; {edge_count} edges</span>
+          <div class="graph-legend" id="graph-legend"></div>
+        </div>
+      </div>
+    </div>
+
     <details class="tl-details">
-      <summary>&#9656; Agent Workflow Log ({len(agent_logs)} events)</summary>
+      <summary>Agent Workflow Log &nbsp;<span style="color:#aaa;font-weight:400;font-size:12px">({len(agent_logs)} events)</span></summary>
       <div class="tl-inner">
         {timeline_html}
       </div>
     </details>
-  </section>
 
+  </div>
 </div>
-<footer class="page-wrap">
-  <p>Built with <a href="https://github.com/fordrainey/MiroFish">MiroFish</a> — AI-powered social simulation &amp; prediction.</p>
+
+<footer>
+  <div class="footer-inner">
+    <span class="footer-brand">MIROFISH</span>
+    <span class="footer-link">Built with <a href="{_escape(demo_url)}">MiroFish</a> — AI-powered social simulation &amp; prediction</span>
+  </div>
 </footer>
 
 <script id="graph-data" type="application/json">
@@ -738,7 +804,7 @@ footer a{{color:#58a6ff;text-decoration:none}}
 
   // Assign colors by type
   var TYPE_COLORS = {{}};
-  var PALETTE = ['#58a6ff','#f59e0b','#10b981','#a78bfa','#f472b6','#34d399','#fb923c','#e879f9'];
+  var PALETTE = ['#1A936F','#3B82F6','#F59E0B','#8B5CF6','#EF4444','#06B6D4','#F97316','#EC4899'];
   var ci = 0;
   nodes.forEach(function(n) {{
     if (!TYPE_COLORS[n.type]) {{ TYPE_COLORS[n.type] = PALETTE[ci % PALETTE.length]; ci++; }}
@@ -823,23 +889,30 @@ footer a{{color:#58a6ff;text-decoration:none}}
       var s = nodeMap[e.source], t = nodeMap[e.target];
       if (!s || !t) return;
       ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(t.x, t.y);
-      ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1; ctx.stroke();
+      ctx.strokeStyle = 'rgba(26,147,111,0.15)'; ctx.lineWidth = 1.5; ctx.stroke();
+    }});
+    // Node shadow
+    nodes.forEach(function(n) {{
+      ctx.beginPath(); ctx.arc(n.x, n.y, 9, 0, Math.PI*2);
+      ctx.fillStyle = 'rgba(0,0,0,0.06)'; ctx.fill();
     }});
     // Nodes
     nodes.forEach(function(n) {{
       ctx.beginPath(); ctx.arc(n.x, n.y, 8, 0, Math.PI*2);
       ctx.fillStyle = n.color; ctx.fill();
-      ctx.fillStyle = '#e6edf3'; ctx.font = '11px system-ui,sans-serif';
-      ctx.textAlign = 'center'; ctx.fillText(n.label.slice(0,18), n.x, n.y+20);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.fillStyle = '#333'; ctx.font = '600 10px Inter,system-ui,sans-serif';
+      ctx.textAlign = 'center'; ctx.fillText(n.label.slice(0,20), n.x, n.y+22);
     }});
     // Tooltip
     if (tooltip) {{
-      ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.strokeStyle = '#30363d';
-      var tw = Math.min(tooltip.text.length*6+20, 260), th = 28;
-      var tx = Math.min(tooltip.x+12, W-tw-4), ty = Math.max(tooltip.y-34, 4);
-      ctx.beginPath(); ctx.roundRect(tx, ty, tw, th, 4); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = '#e6edf3'; ctx.font = '12px system-ui,sans-serif';
-      ctx.textAlign = 'left'; ctx.fillText(tooltip.text.slice(0,40), tx+10, ty+18);
+      var text = tooltip.text.slice(0, 48);
+      var tw = Math.min(text.length * 6.5 + 24, 300), th = 30;
+      var tx = Math.min(tooltip.x + 14, W - tw - 4), ty = Math.max(tooltip.y - 40, 4);
+      ctx.fillStyle = '#0d0d14'; ctx.strokeStyle = '#1A936F'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.roundRect(tx, ty, tw, th, 5); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.font = '12px Inter,system-ui,sans-serif';
+      ctx.textAlign = 'left'; ctx.fillText(text, tx + 10, ty + 19);
     }}
   }}
 

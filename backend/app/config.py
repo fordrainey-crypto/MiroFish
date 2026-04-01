@@ -69,7 +69,7 @@ class Config:
     REQUIRE_USER_KEYS = os.environ.get('REQUIRE_USER_KEYS', 'false').lower() == 'true'
 
     # URL of the live demo, embedded in exported report HTML as a CTA link.
-    DEMO_URL = os.environ.get('DEMO_URL', 'http://localhost:3000')
+    DEMO_URL = os.environ.get('DEMO_URL', 'https://mirofish.fordrainey.com')
 
     @classmethod
     def validate(cls):
