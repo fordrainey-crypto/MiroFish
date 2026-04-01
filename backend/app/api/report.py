@@ -878,12 +878,12 @@ footer a{{color:#58a6ff;text-decoration:none}}
         return Response(
             html,
             mimetype='text/html',
-            headers={{'Content-Disposition': f'attachment; filename="mirofish-{{slug}}.html"'}}
+            headers={'Content-Disposition': f'attachment; filename="mirofish-{slug}.html"'}
         )
 
     except Exception as e:
         logger.error(f"导出HTML报告失败: {str(e)}")
-        return jsonify({{"success": False, "error": str(e), "traceback": traceback.format_exc()}}), 500
+        return jsonify({"success": False, "error": str(e), "traceback": traceback.format_exc()}), 500
 
 
 @report_bp.route('/<report_id>/view', methods=['GET'])
