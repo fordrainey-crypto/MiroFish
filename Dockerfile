@@ -30,5 +30,5 @@ RUN cd frontend && npm run build
 
 EXPOSE 5001
 
-# Run Flask backend only — it serves the built frontend + API
-CMD ["sh", "-c", "cd backend && FLASK_PORT=${PORT:-5001} uv run python run.py"]
+# Run with gunicorn (production WSGI server) — serves built frontend + API
+CMD ["sh", "-c", "cd backend && uv run gunicorn 'app:create_app()' --bind 0.0.0.0:${PORT:-5001} --workers 2 --threads 4 --timeout 120"]
