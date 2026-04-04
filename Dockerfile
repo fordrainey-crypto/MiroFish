@@ -25,7 +25,10 @@ RUN npm ci \
 # 复制项目源码
 COPY . .
 
-EXPOSE 3000 5001
+# Build frontend to static files
+RUN cd frontend && npm run build
 
-# 同时启动前后端（开发模式）
-CMD ["npm", "run", "dev"]
+EXPOSE 5001
+
+# Run Flask backend only — it serves the built frontend + API
+CMD ["sh", "-c", "cd backend && FLASK_PORT=${PORT:-5001} uv run python run.py"]
