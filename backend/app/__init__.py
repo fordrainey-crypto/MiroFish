@@ -89,7 +89,12 @@ def create_app(config_class=Config):
             full_path = os.path.join(frontend_dist, path)
             if path and os.path.exists(full_path) and not os.path.isdir(full_path):
                 return send_from_directory(frontend_dist, path)
-            return send_from_directory(frontend_dist, 'index.html')
+            # index.html must never be cached — hashed JS/CSS assets handle their own caching
+            response = send_from_directory(frontend_dist, 'index.html')
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+            return response
     
     if should_log_startup:
         logger.info("MiroFish Backend 启动完成")
