@@ -6,7 +6,13 @@ import service, { requestWithRetry } from './index'
  * @returns {Promise}
  */
 export function generateOntology(formData) {
-  return requestWithRetry(() => 
+  const llmKey = localStorage.getItem('mf_llm_key')
+  const zepKey = localStorage.getItem('mf_zep_key')
+  const model = localStorage.getItem('mf_model')
+  if (llmKey) formData.append('user_llm_api_key', llmKey)
+  if (zepKey) formData.append('user_zep_api_key', zepKey)
+  if (model) formData.append('user_llm_model_name', model)
+  return requestWithRetry(() =>
     service({
       url: '/api/graph/ontology/generate',
       method: 'post',
